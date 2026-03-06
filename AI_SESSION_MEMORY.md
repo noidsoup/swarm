@@ -36,4 +36,54 @@ Session summaries and state for the AI Dev Swarm project.
 - Confirmed backgrounded swarm run **finished successfully** (exit 0, ~158s): PLAN → BUILD → REVIEW → FIX → REVIEW → APPROVED → SWARM COMPLETE (2 reviews). Reviewer logged “Tool not found” for `final_answer` once; flow continued.
 - Added **Windows UTF-8 fix** in `run.py`: on `win32`, stdout/stderr are wrapped with UTF-8 (errors=replace) to avoid CrewAI emoji/charmap errors.
 - Documented encoding in **README** Troubleshooting (PYTHONIOENCODING fallback for subprocesses).
-- **Initial git commit:** `4567d63` — "Initial swarm implementation + test run, Windows UTF-8 fix" (20 files).
+---
+
+## 2025-03-06 — Commander loop, portability, and Cursor automation
+
+**Branch:** main
+
+**Completed**
+- Added **background daemon** (`daemon.py`, `swarm/watcher.py`, `swarm/background_loop.py`): continuous improvement loop that watches repo for changes, queues files, runs swarm automatically, opens PRs
+- Created **COMMANDER_LOOP.md**: documents the review-fix-re-review loop that runs until code is approved (max 3 iterations)
+- Made swarm **portable**:
+  - Added `--repo` CLI flag to `run.py` so you can target other repositories
+  - Created `setup.py` to make swarm pip-installable: `pip install git+https://github.com/noidsoup/swarm.git`
+  - Added CLI entry points: `swarm-run`, `swarm-daemon` (with wrappers for Windows `.bat` and Unix shell scripts)
+- Created **USING_IN_OTHER_REPOS.md**: 4 usage patterns (CLI flag, pip install, MCP, copy/symlink)
+- **Made Cursor proactive** by updating `.cursor/rules/swarm-commander.mdc`:
+  - Changed default behavior: Cursor now automatically delegates to swarm (no need to ask)
+  - When user asks for code work, Cursor immediately: reads code → creates plan → calls `run_swarm` → judges results
+  - No manual commands needed; swarm MCP is always available
+- Pushed to GitHub: commits `04f0170`, `485de0d`, `784d734`, `12286cc`
+- Successfully authenticated with GitHub, created repo `noidsoup/swarm` on GitHub
+
+**Key Features Now Available**
+1. **Self-improving code loop**: review → fix → re-review until approved (max 3 iterations)
+2. **Quality gates**: security, performance, tests, lint all run in parallel
+3. **Continuous daemon**: `python daemon.py /repo` watches and improves code 24/7
+4. **Portable**: `pip install -e .` then `swarm-run "feature"` from any repo
+5. **Automatic Cursor delegation**: ask for a feature, Cursor runs the swarm without you asking
+
+**Installation options**
+- **Local dev**: `pip install -e /path/to/swarm`
+- **From GitHub**: `pip install git+https://github.com/noidsoup/swarm.git`
+- **Python module**: `python -m swarm.cli "feature"`
+- **Wrapper scripts**: `swarm-run "feature"` (Windows `.bat` or Unix shell)
+
+**Usage patterns**
+- **CLI**: `python run.py --repo /path/to/repo "Add feature"`
+- **MCP (Cursor)**: describe feature in chat → Cursor auto-delegates
+- **Daemon**: `python daemon.py .` → continuous improvement
+- **Package**: `pip install -e .` then use `swarm-run` from anywhere
+
+**Known issues / notes**
+- Windows encoding fixed in `run.py` (UTF-8 wrapping)
+- Swarm MCP is loaded as `user-swarm` in Cursor (tools: `run_swarm`, `swarm_status`, `list_agents`)
+- Reviewer has one edge case where `final_answer` tool fails but flow continues
+
+**Next opportunities**
+- Add auto-PR opening in daemon (currently just logs "would open PR")
+- Test portability on multiple real repos (React, Next.js, WordPress, Shopify)
+- Add optional Claude/GPT-4 for judge phase (currently uses local model)
+- Performance: profile and optimize agent LLM calls
+- UI: web dashboard for daemon status and logs
