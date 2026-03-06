@@ -36,4 +36,4 @@ Session summaries and state for the AI Dev Swarm project.
 - Confirmed backgrounded swarm run **finished successfully** (exit 0, ~158s): PLAN → BUILD → REVIEW → FIX → REVIEW → APPROVED → SWARM COMPLETE (2 reviews). Reviewer logged “Tool not found” for `final_answer` once; flow continued.
 - Added **Windows UTF-8 fix** in `run.py`: on `win32`, stdout/stderr are wrapped with UTF-8 (errors=replace) to avoid CrewAI emoji/charmap errors.
 - Documented encoding in **README** Troubleshooting (PYTHONIOENCODING fallback for subprocesses).
-- **Initial git commit** (see below).
+- **Initial git commit:** `4567d63` — "Initial swarm implementation + test run, Windows UTF-8 fix" (20 files).
