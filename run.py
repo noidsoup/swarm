@@ -77,6 +77,11 @@ def main() -> None:
         action="store_true",
         help="Reduce agent output verbosity",
     )
+    parser.add_argument(
+        "--repo",
+        metavar="PATH",
+        help="Path to target repository (default: current directory)",
+    )
 
     args = parser.parse_args()
 
@@ -94,6 +99,9 @@ def main() -> None:
         cfg.max_review_loops = args.max_reviews
     if args.quiet:
         cfg.verbose = False
+    if args.repo:
+        import os
+        cfg.repo_root = os.path.abspath(args.repo)
 
     headless = args.plan is not None
     mode_label = "HEADLESS (Cursor is commander)" if headless else "STANDALONE"
