@@ -18,10 +18,16 @@ setup(
         "gitpython>=3.1.0",
         "watchdog>=3.0.0",
     ],
+    scripts=[
+        "swarm-run",
+        "swarm-daemon",
+        "swarm-run.bat",
+        "swarm-daemon.bat",
+    ],
     entry_points={
         "console_scripts": [
-            "swarm-run=run:main",
-            "swarm-daemon=swarm.background_loop:start_background_daemon",
+            "swarm-run=swarm.cli:main",
+            "swarm-daemon=swarm.daemon_cli:main",
         ],
     },
     include_package_data=True,

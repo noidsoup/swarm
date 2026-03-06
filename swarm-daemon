@@ -1,0 +1,3 @@
+#!/bin/bash
+# swarm-daemon - wrapper for swarm-daemon command on Unix/macOS/Linux
+python -m swarm.daemon_cli "$@"

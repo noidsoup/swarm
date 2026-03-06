@@ -1,0 +1,3 @@
+#!/bin/bash
+# swarm-run - wrapper for swarm-run command on Unix/macOS/Linux
+python -m swarm.cli "$@"
