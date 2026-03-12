@@ -433,3 +433,26 @@ Replace IP/username/key path if different. Expect `"status": "complete"` and a r
 
 **Windows next action**
 - Continue troubleshooting from `swarm-33cee06a3476` (worker logs + outbox state), then rerun the same Mac command once Windows-side issue is resolved.
+
+---
+
+## 2026-03-12 — Mac continue run reached terminal 300s timeout
+
+**Branch:** main
+**PR:** none (direct sync requested)
+
+**Completed**
+- Mac pulled latest and reran the offload smoke command in `--mode cursor` with the same timeout/key settings.
+
+**Outcome**
+- Task now reaches a terminal worker timeout instead of heartbeat stall:
+  - `task_id=swarm-65fbfeb893a5`
+  - `status=error`
+  - `error=Cursor worker task timed out after 300s`
+
+**Interpretation**
+- Offload path remains functional (task accepted, executed, terminal result returned).
+- Windows worker runtime budget is still insufficient for this real/non-skip run under current conditions.
+
+**Windows next action**
+- Continue from `swarm-65fbfeb893a5` in Windows logs/outbox and tune worker/model runtime before rerun.
