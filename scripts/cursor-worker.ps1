@@ -63,8 +63,9 @@ function Start-Worker {
         $env:WINDOWS_CURSOR_TASK_TIMEOUT = "60"
         $Timeout = 60
     } else {
-        $env:WINDOWS_CURSOR_TASK_TIMEOUT = "300"
-        $Timeout = 300
+        # Real LLM run: 600s so Windows Ollama has time to finish build phase
+        $env:WINDOWS_CURSOR_TASK_TIMEOUT = "600"
+        $Timeout = 600
     }
 
     Push-Location $RepoRoot

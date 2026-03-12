@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def default_ollama_base_url() -> str:
+    """Default Ollama URL; use 127.0.0.1 on Windows to avoid empty localhost listener."""
+    if os.getenv("OLLAMA_BASE_URL"):
+        return os.environ["OLLAMA_BASE_URL"]
+    return "http://127.0.0.1:11434" if sys.platform == "win32" else "http://localhost:11434"
 
 
 ROLE_MODEL_MAP = {
@@ -28,9 +36,7 @@ class SwarmConfig:
     worker_model: str = field(
         default_factory=lambda: os.getenv("WORKER_MODEL", "ollama/qwen2.5-coder:7b")
     )
-    ollama_base_url: str = field(
-        default_factory=lambda: os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    )
+    ollama_base_url: str = field(default_factory=default_ollama_base_url)
     auto_commit: bool = field(
         default_factory=lambda: os.getenv("AUTO_COMMIT", "false").lower() == "true"
     )

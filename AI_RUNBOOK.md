@@ -60,6 +60,35 @@ python scripts/swarm_remote.py status <task-id>
 python scripts/swarm_remote.py log <task-id>
 ```
 
+## Get cursor mode working (Mac → Windows)
+
+Goal: Mac dispatches a task; Windows runs the worker and LLM (Ollama), returns the result.
+
+**1. Windows (this machine)**  
+- Ollama running and reachable (default: `http://127.0.0.1:11434` is used on Windows when `OLLAMA_BASE_URL` is not set).  
+- Smoke repo exists, e.g. `C:\Users\<you>\AppData\Local\Temp\smoke-repo` with a small file (e.g. `README.md`).  
+- Start the cursor worker:
+  - **Fast (no LLM):** `.\scripts\cursor-worker.ps1 start -Fast` — pipeline check only, returns in ~1 min.  
+  - **Real (with LLM):** `.\scripts\cursor-worker.ps1 stop` then `.\scripts\cursor-worker.ps1 start` — 600s task timeout, uses Ollama.  
+- Check: `.\scripts\cursor-worker.ps1 status` → "Worker running PID …".
+
+**2. Mac**  
+- In the swarm repo: `git pull origin main`.  
+- Set env (or use `.env`): `WINDOWS_HOST`, `WINDOWS_USER`, and for SSH auth `WINDOWS_SSH_KEY` (path to key, e.g. `$HOME/.ssh/id_ed25519_nopass`).  
+- Optional for long runs: `export WINDOWS_CURSOR_TIMEOUT=800 WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=120`.  
+- Dispatch (path must exist on Windows):
+  ```bash
+  python3 scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"
+  ```
+- Expect: `"status": "complete"` and a `build_summary`. For real run, allow several minutes (up to ~10 with 600s timeout).
+
+**3. If it fails**  
+- Timeout on Mac: increase `WINDOWS_CURSOR_TIMEOUT` and `WINDOWS_CURSOR_HEARTBEAT_TIMEOUT`; ensure worker on Windows was started with real mode (no `-Fast`).  
+- Timeout on Windows: worker uses 600s by default for real runs; if the build phase still doesn’t finish, set `WINDOWS_CURSOR_TASK_TIMEOUT=900` (or higher) before starting the worker.  
+- Ollama not reached: on Windows the default base URL is `http://127.0.0.1:11434`; override with `OLLAMA_BASE_URL` if your Ollama is elsewhere.
+
+---
+
 ## Test the whole system
 
 Two ways to test:

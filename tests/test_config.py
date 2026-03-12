@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import sys
 from unittest.mock import Mock, patch
 
-from swarm.config import SwarmConfig
+from swarm.config import SwarmConfig, default_ollama_base_url
 
 
 def test_make_llm_adds_base_url_for_ollama_models() -> None:
@@ -37,3 +38,20 @@ def test_llm_for_role_falls_back_to_worker_model(monkeypatch: Mock) -> None:
 
     assert result == "worker-llm"
     config._make_llm.assert_called_once_with("default-worker")
+
+
+def test_default_ollama_base_url_uses_env_when_set(monkeypatch: Mock) -> None:
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://custom:11434")
+    assert default_ollama_base_url() == "http://custom:11434"
+
+
+def test_default_ollama_base_url_uses_127_on_windows_when_unset(monkeypatch: Mock) -> None:
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    with patch.object(sys, "platform", "win32"):
+        assert default_ollama_base_url() == "http://127.0.0.1:11434"
+
+
+def test_default_ollama_base_url_uses_localhost_on_non_windows_when_unset(monkeypatch: Mock) -> None:
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    with patch.object(sys, "platform", "darwin"):
+        assert default_ollama_base_url() == "http://localhost:11434"

@@ -41,7 +41,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-OLLAMA_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+from swarm.config import default_ollama_base_url
+
+OLLAMA_URL = default_ollama_base_url()
 
 
 def _task_response(task) -> dict:
