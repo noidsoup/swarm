@@ -459,6 +459,35 @@ Replace IP/username/key path if different. Expect `"status": "complete"` and a r
 
 ---
 
+## 2026-03-12 — Session close-out checkpoint
+
+**Branch:** `chore/close-out-2026-03-12`  
+**PR:** pending creation from this branch
+
+**Completed since last entry**
+- Confirmed at least one full Mac->Windows offload run completed in cursor mode (`swarm-bea0f2a28206`).
+- Added and pushed a `WriteFile` safety guard to block destructive no-overlap rewrites on existing files (`08393a4`) with focused tests.
+- Continued repeated Mac-side `--mode cursor` validation runs and recorded latest failures/successes for Windows-side handoff.
+
+**Current state / in progress**
+- Offload transport path is functional and can complete, but completion latency and consistency are still variable.
+- Latest run reached terminal worker timeout (`swarm-a5d5818f7be5`, 600s), indicating runtime tuning remains necessary.
+
+**Key decisions (and why)**
+- Keep using only the requested offload path (`--mode cursor`) to match operational intent.
+- Prioritize file safety (guard + tests) before broader reliability tuning to avoid destructive edits during long-running tasks.
+
+**Known risks / blockers**
+- Windows-side runtime can still stall or exceed worker timeout on non-trivial runs.
+- Fast smoke and real runs can diverge in behavior; real-mode validation is still required per task size.
+
+**Next concrete steps**
+- [ ] On Windows, run worker in real mode and monitor one full run with higher timeout when needed.
+- [ ] From Mac, run one tiny real append-only task and verify minimal diff behavior in target repo.
+- [ ] Tune runtime defaults (timeouts/model warm-up) based on latest Windows logs to reduce stalled runs.
+
+---
+
 ## 2026-03-12 — Mac offload run completed successfully
 
 **Branch:** main
