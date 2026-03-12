@@ -10,6 +10,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+ROLE_MODEL_MAP = {
+    "planner":  "PLANNER_MODEL",
+    "reviewer": "REVIEWER_MODEL",
+    "builder":  "BUILDER_MODEL",
+    "security": "SECURITY_MODEL",
+    "performance": "PERFORMANCE_MODEL",
+    "tester":   "TESTER_MODEL",
+    "refactorer": "REFACTORER_MODEL",
+    "docs":     "DOCS_MODEL",
+    "linter":   "LINTER_MODEL",
+}
+
+
 @dataclass
 class SwarmConfig:
     worker_model: str = field(
@@ -34,13 +47,28 @@ class SwarmConfig:
         default_factory=lambda: os.getenv("SWARM_MODE", "headless")
     )
 
-    def worker_llm(self):
+    def _make_llm(self, model: str):
         from crewai import LLM
 
-        kwargs = {"model": self.worker_model}
-        if self.worker_model.startswith("ollama/"):
+        kwargs = {"model": model}
+        if model.startswith("ollama/"):
             kwargs["base_url"] = self.ollama_base_url
         return LLM(**kwargs)
+
+    def worker_llm(self):
+        return self._make_llm(self.worker_model)
+
+    def llm_for_role(self, role: str):
+        """Return a role-specific LLM if configured, otherwise the default worker LLM.
+
+        Set per-role models via env vars (e.g. PLANNER_MODEL=ollama/qwen2.5-coder:14b).
+        If unset, falls back to WORKER_MODEL.
+        """
+        env_key = ROLE_MODEL_MAP.get(role)
+        model = os.getenv(env_key, "") if env_key else ""
+        if not model:
+            model = self.worker_model
+        return self._make_llm(model)
 
 
 cfg = SwarmConfig()

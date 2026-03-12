@@ -29,8 +29,19 @@ _git_tools = [GitStatusTool(), GitDiffTool(), GitCommitTool(), GitBranchTool(), 
 
 
 def build_agents() -> dict[str, Agent]:
-    """Create and return all 10 worker agents keyed by short name."""
-    worker = cfg.worker_llm()
+    """Create and return all 10 worker agents keyed by short name.
+
+    Each agent can use a role-specific model (set via env vars like
+    PLANNER_MODEL, REVIEWER_MODEL, etc.) or falls back to WORKER_MODEL.
+    """
+    builder_llm  = cfg.llm_for_role("builder")
+    reviewer_llm = cfg.llm_for_role("reviewer")
+    security_llm = cfg.llm_for_role("security")
+    perf_llm     = cfg.llm_for_role("performance")
+    tester_llm   = cfg.llm_for_role("tester")
+    refactor_llm = cfg.llm_for_role("refactorer")
+    docs_llm     = cfg.llm_for_role("docs")
+    linter_llm   = cfg.llm_for_role("linter")
 
     return {
         # -- BUILDERS --
@@ -43,7 +54,7 @@ def build_agents() -> dict[str, Agent]:
                 "clean, accessible, performant components."
             ),
             tools=_write_tools,
-            llm=worker,
+            llm=builder_llm,
             verbose=cfg.verbose,
             allow_delegation=False,
         ),
@@ -56,7 +67,7 @@ def build_agents() -> dict[str, Agent]:
                 "build secure, performant solutions."
             ),
             tools=_write_tools,
-            llm=worker,
+            llm=builder_llm,
             verbose=cfg.verbose,
             allow_delegation=False,
         ),
@@ -69,7 +80,7 @@ def build_agents() -> dict[str, Agent]:
                 "conversion-optimized storefronts."
             ),
             tools=_write_tools,
-            llm=worker,
+            llm=builder_llm,
             verbose=cfg.verbose,
             allow_delegation=False,
         ),
@@ -86,7 +97,7 @@ def build_agents() -> dict[str, Agent]:
                 "it genuinely is. You always cite line numbers and suggest fixes."
             ),
             tools=_read_tools + [GitDiffTool()],
-            llm=worker,
+            llm=reviewer_llm,
             verbose=cfg.verbose,
             allow_delegation=False,
         ),
@@ -102,7 +113,7 @@ def build_agents() -> dict[str, Agent]:
                 "unsafe patterns."
             ),
             tools=_read_tools + [ShellTool()],
-            llm=worker,
+            llm=security_llm,
             verbose=cfg.verbose,
             allow_delegation=False,
         ),
@@ -117,7 +128,7 @@ def build_agents() -> dict[str, Agent]:
                 "You profile before optimizing and always measure the impact."
             ),
             tools=_read_tools + [ShellTool()],
-            llm=worker,
+            llm=perf_llm,
             verbose=cfg.verbose,
             allow_delegation=False,
         ),
@@ -130,7 +141,7 @@ def build_agents() -> dict[str, Agent]:
                 "You test edge cases and error paths."
             ),
             tools=_write_tools + [TestTool()],
-            llm=worker,
+            llm=tester_llm,
             verbose=cfg.verbose,
             allow_delegation=False,
         ),
@@ -147,7 +158,7 @@ def build_agents() -> dict[str, Agent]:
                 "conditionals. You never change behavior during refactoring."
             ),
             tools=_write_tools,
-            llm=worker,
+            llm=refactor_llm,
             verbose=cfg.verbose,
             allow_delegation=False,
         ),
@@ -159,7 +170,7 @@ def build_agents() -> dict[str, Agent]:
                 "You write for the next developer, not for yourself."
             ),
             tools=_write_tools,
-            llm=worker,
+            llm=docs_llm,
             verbose=cfg.verbose,
             allow_delegation=False,
         ),
@@ -171,7 +182,7 @@ def build_agents() -> dict[str, Agent]:
                 "You run the linter, read the output, and fix every issue."
             ),
             tools=_write_tools + [LintTool()],
-            llm=worker,
+            llm=linter_llm,
             verbose=cfg.verbose,
             allow_delegation=False,
         ),

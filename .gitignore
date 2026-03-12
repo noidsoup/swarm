@@ -19,3 +19,7 @@ env/
 *.swo
 
 uncommitted/
+
+# Docker
+workspace/
+monitoring/grafana_data/

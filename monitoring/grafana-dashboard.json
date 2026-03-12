@@ -1,0 +1,85 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "GPU Temperature (°C)",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "nvidia_gpu_temperature_celsius",
+          "legendFormat": "GPU {{gpu}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 80 }
+            ]
+          },
+          "unit": "celsius",
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    {
+      "title": "GPU Utilization (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 9, "x": 6, "y": 0 },
+      "targets": [
+        {
+          "expr": "nvidia_gpu_utilization_percentage",
+          "legendFormat": "GPU {{gpu}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "min": 0, "max": 100 }
+      }
+    },
+    {
+      "title": "VRAM Usage (MB)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 9, "x": 15, "y": 0 },
+      "targets": [
+        {
+          "expr": "nvidia_gpu_memory_used_bytes / 1048576",
+          "legendFormat": "Used"
+        },
+        {
+          "expr": "nvidia_gpu_memory_total_bytes / 1048576",
+          "legendFormat": "Total"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "decmbytes" }
+      }
+    },
+    {
+      "title": "Swarm Tasks",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "swarm_tasks_total", "legendFormat": "Total" },
+        { "expr": "swarm_tasks_queued", "legendFormat": "Queued" },
+        { "expr": "swarm_tasks_running", "legendFormat": "Running" },
+        { "expr": "swarm_tasks_completed", "legendFormat": "Completed" },
+        { "expr": "swarm_tasks_failed", "legendFormat": "Failed" }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["swarm", "gpu", "ai"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "AI Dev Swarm — GPU & Tasks",
+  "uid": "swarm-overview"
+}
