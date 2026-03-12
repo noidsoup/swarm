@@ -46,6 +46,18 @@ class SwarmConfig:
     mode: str = field(
         default_factory=lambda: os.getenv("SWARM_MODE", "headless")
     )
+    windows_host: str = field(default_factory=lambda: os.getenv("WINDOWS_HOST", ""))
+    windows_user: str = field(default_factory=lambda: os.getenv("WINDOWS_USER", ""))
+    windows_ssh_key: str = field(default_factory=lambda: os.getenv("WINDOWS_SSH_KEY", ""))
+    windows_swarm_api: str = field(
+        default_factory=lambda: os.getenv("WINDOWS_SWARM_API", "http://localhost:9000")
+    )
+    windows_cursor_workspace: str = field(
+        default_factory=lambda: os.getenv("WINDOWS_CURSOR_WORKSPACE", "")
+    )
+    default_execution_mode: str = field(
+        default_factory=lambda: os.getenv("DEFAULT_EXECUTION_MODE", "local")
+    )
 
     def _make_llm(self, model: str):
         from crewai import LLM

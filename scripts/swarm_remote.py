@@ -23,8 +23,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
+import subprocess
 import sys
-import time
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 try:
     import httpx
@@ -40,8 +45,13 @@ try:
 except ImportError:
     HAS_RICH = False
 
+from swarm.config import cfg
+from swarm.dispatch import Dispatcher
+from swarm.projects import ProjectRegistry, spawn_project_from_template
+
 SWARM_URL = os.getenv("SWARM_URL", "http://localhost:9000")
 TIMEOUT = 30
+PROJECTS = ProjectRegistry()
 
 
 def _url(path: str) -> str:
@@ -84,6 +94,24 @@ def cmd_submit(args):
     print(f"\nTrack it:")
     print(f"  swarm-remote status {result['task_id']}")
     print(f"  swarm-remote logs {result['task_id']}")
+
+
+def cmd_dispatch(args):
+    plan = ""
+    if args.plan:
+        with open(args.plan, encoding="utf-8") as f:
+            plan = f.read()
+
+    dispatcher = Dispatcher(cfg)
+    result = dispatcher.dispatch(
+        plan=plan or args.feature,
+        feature_name=args.feature,
+        builder_type=args.builder or "",
+        repo_path=args.repo_path or "",
+        repo_url=args.repo_url or "",
+        execution_mode=args.mode or "",
+    )
+    print(json.dumps(result, indent=2))
 
 
 def cmd_status(args):
@@ -177,6 +205,41 @@ def cmd_gpu(_args):
         print(json.dumps(gpu, indent=2))
 
 
+def cmd_projects(_args):
+    projects = PROJECTS.list_projects()
+    if not projects:
+        print("No projects registered.")
+        return
+    print(json.dumps(projects, indent=2))
+
+
+def cmd_spawn(args):
+    created_path = spawn_project_from_template(
+        name=args.name,
+        description=args.description or "",
+        template=args.template,
+        repo_path=args.repo_path or "",
+    )
+    record = PROJECTS.add_project(
+        name=args.name,
+        repo_path=created_path,
+        execution_mode=args.mode or cfg.default_execution_mode,
+        builder_type=args.builder or "",
+        active=True,
+    )
+    print(json.dumps({"status": "created", "path": created_path, "project": record.__dict__}, indent=2))
+
+
+def cmd_wake(args):
+    script_path = Path(__file__).resolve().parent / "wake-on-lan.py"
+    cmd = [sys.executable, str(script_path), args.mac]
+    if args.ip:
+        cmd.extend(["--ip", args.ip])
+    if args.port:
+        cmd.extend(["--port", str(args.port)])
+    subprocess.run(cmd, check=True)
+
+
 def main():
     global SWARM_URL
     parser = argparse.ArgumentParser(
@@ -194,6 +257,16 @@ def main():
     p_submit.add_argument("--builder", help="Force builder type")
     p_submit.add_argument("--repo", help="Git repo URL to clone")
     p_submit.set_defaults(func=cmd_submit)
+
+    # dispatch
+    p_dispatch = sub.add_parser("dispatch", help="Dispatch a task via configured mode")
+    p_dispatch.add_argument("feature", help="Feature request description")
+    p_dispatch.add_argument("--plan", help="Path to a plan file (markdown)")
+    p_dispatch.add_argument("--builder", help="Force builder type")
+    p_dispatch.add_argument("--repo-path", help="Local repo path for local/cursor mode")
+    p_dispatch.add_argument("--repo-url", help="Git repo URL for remote ollama mode")
+    p_dispatch.add_argument("--mode", choices=["local", "ollama", "cursor"], help="Execution mode")
+    p_dispatch.set_defaults(func=cmd_dispatch)
 
     # status
     p_status = sub.add_parser("status", help="Check task status")
@@ -218,6 +291,31 @@ def main():
 
     # gpu
     sub.add_parser("gpu", help="GPU utilization").set_defaults(func=cmd_gpu)
+
+    # projects
+    sub.add_parser("projects", help="List registered projects").set_defaults(func=cmd_projects)
+
+    # spawn
+    p_spawn = sub.add_parser("spawn", help="Create a project from template")
+    p_spawn.add_argument("name", help="Project name")
+    p_spawn.add_argument(
+        "--template",
+        default="empty",
+        choices=["empty", "python-cli", "nextjs-app", "wordpress-plugin", "shopify-theme"],
+        help="Template to scaffold",
+    )
+    p_spawn.add_argument("--description", help="Short project description")
+    p_spawn.add_argument("--repo-path", help="Parent path where project should be created")
+    p_spawn.add_argument("--mode", choices=["local", "ollama", "cursor"], help="Default execution mode")
+    p_spawn.add_argument("--builder", help="Default builder type")
+    p_spawn.set_defaults(func=cmd_spawn)
+
+    # wake
+    p_wake = sub.add_parser("wake", help="Wake Windows machine via WoL")
+    p_wake.add_argument("mac", help="Target MAC address")
+    p_wake.add_argument("--ip", help="Broadcast IP")
+    p_wake.add_argument("--port", type=int, help="UDP port")
+    p_wake.set_defaults(func=cmd_wake)
 
     args = parser.parse_args()
     SWARM_URL = args.url

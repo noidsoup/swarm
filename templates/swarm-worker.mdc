@@ -1,0 +1,28 @@
+# Swarm Windows Worker Rule
+
+This Cursor workspace is configured as a remote worker for the Mac swarm commander.
+
+## Task protocol
+
+- Watch `~/.swarm/inbox/` for task files ending in `.json`.
+- Each task includes: `task_id`, `plan`, `feature_name`, `builder_type`, `repo_path`, `repo_url`.
+- Execute the task in the requested repository.
+- Prefer using this workspace's Cursor agent models for planning + implementation.
+
+## Completion protocol
+
+- When done, write `~/.swarm/outbox/<task_id>.json` with:
+  - `status`: `complete` or `error`
+  - `task_id`
+  - `build_summary`
+  - `review_feedback`
+  - `quality_report`
+  - `polish_report`
+  - `error` (if any)
+  - `completed_at` (ISO timestamp)
+  - `execution_mode`: `cursor`
+
+## Safety
+
+- Never include secrets or credentials in output files.
+- If `repo_path` is missing and `repo_url` is present, clone into a temporary folder and return the path in summary.
