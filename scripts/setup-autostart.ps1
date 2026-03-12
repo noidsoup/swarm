@@ -29,7 +29,8 @@ if (Test-Path $dockerDesktopPath) {
 }
 
 # 2. Create a scheduled task to run docker compose up after Docker starts
-$swarmRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Resolve
+# PSScriptRoot is "<repo>\scripts", so parent is the repo root.
+$swarmRoot = Split-Path $PSScriptRoot -Parent
 $taskName = "SwarmDockerComposeUp"
 $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 

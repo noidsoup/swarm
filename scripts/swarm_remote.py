@@ -178,6 +178,7 @@ def cmd_gpu(_args):
 
 
 def main():
+    global SWARM_URL
     parser = argparse.ArgumentParser(
         prog="swarm-remote",
         description="Remote CLI for the AI Dev Swarm",
@@ -219,7 +220,6 @@ def main():
     sub.add_parser("gpu", help="GPU utilization").set_defaults(func=cmd_gpu)
 
     args = parser.parse_args()
-    global SWARM_URL
     SWARM_URL = args.url
     args.func(args)
 

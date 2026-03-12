@@ -20,7 +20,7 @@ from swarm.tools import (
     GitBranchTool,
     GitLogTool,
     LintTool,
-    TestTool,
+    RunTestsTool,
 )
 
 _read_tools = [FileReadTool(), ListDirectoryTool()]
@@ -153,7 +153,7 @@ def build_agents() -> dict[str, Agent]:
                 "You write tests that catch real bugs, not just increase coverage numbers. "
                 "You test edge cases and error paths."
             ),
-            tools=_write_tools + [TestTool()],
+            tools=_write_tools + [RunTestsTool()],
             llm=tester_llm,
             verbose=cfg.verbose,
             allow_delegation=False,

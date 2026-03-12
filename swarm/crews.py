@@ -20,9 +20,12 @@ def quality_crew(
     tasks: list[Task],
     verbose: bool = True,
 ) -> Crew:
-    """Multi-agent crew with async tasks for independent checks."""
-    for task in tasks:
-        task.async_execution = True
+    """Multi-agent crew for quality and polish checks.
+
+    CrewAI currently validates sequential crews to allow at most one async task
+    at the end. Keep quality/polish tasks synchronous so these crews are always
+    valid across CrewAI versions.
+    """
     return Crew(
         agents=agents,
         tasks=tasks,

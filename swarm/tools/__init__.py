@@ -10,7 +10,7 @@ from swarm.tools.git_tool import (
     GitLogTool,
 )
 from swarm.tools.lint_tool import LintTool
-from swarm.tools.test_tool import TestTool
+from swarm.tools.test_tool import RunTestsTool
 
 __all__ = [
     "ShellTool",
@@ -23,5 +23,5 @@ __all__ = [
     "GitBranchTool",
     "GitLogTool",
     "LintTool",
-    "TestTool",
+    "RunTestsTool",
 ]

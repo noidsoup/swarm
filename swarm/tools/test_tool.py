@@ -12,20 +12,20 @@ from pydantic import BaseModel, Field
 from swarm.config import cfg
 
 
-class TestInput(BaseModel):
+class RunTestsInput(BaseModel):
     path: str = Field(
         default="",
         description="Specific test file or directory. Empty = run all tests.",
     )
 
 
-class TestTool(BaseTool):
+class RunTestsTool(BaseTool):
     name: str = "RunTests"
     description: str = (
         "Run the project's test suite. Auto-detects jest, vitest, pytest, or npm test. "
         "Returns pass/fail output."
     )
-    args_schema: Type[BaseModel] = TestInput
+    args_schema: Type[BaseModel] = RunTestsInput
 
     def _run(self, path: str = "") -> str:
         runner = self._detect_runner()
