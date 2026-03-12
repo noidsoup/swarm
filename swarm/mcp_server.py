@@ -21,6 +21,17 @@ import traceback
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+from simplemem_client import SimpleMemClient, load_simplemem_settings
+from swarm.context_pack import build_context_pack, summarize_context_pack
+from swarm.evals import (
+    append_event,
+    build_eval_report,
+    make_event,
+    read_events,
+    summarize_eval_report,
+)
+from swarm.retrieval import build_retrieval_pack, summarize_retrieval_pack
+from swarm.run_artifacts import artifact_file_map, ensure_artifact_dir
 from swarm.dispatch import Dispatcher
 from swarm.projects import ProjectRegistry, spawn_project_from_template
 from swarm.task_models import new_task_id, utcnow_iso
@@ -45,6 +56,26 @@ def _update_run(run_id: str, **updates) -> None:
         _runs[run_id] = current
 
 
+def _write_lesson(result: dict, failure_kind: str = "") -> None:
+    try:
+        client = SimpleMemClient(load_simplemem_settings())
+        client.add_lesson(
+            (
+                f"MCP swarm run finished with status={result.get('status')} "
+                f"score={result.get('score', 0)} failure_kind={failure_kind or 'none'}."
+            ),
+            {
+                "type": "swarm_lesson",
+                "builder": result.get("builder", "auto"),
+                "status": result.get("status", ""),
+                "score": result.get("score", 0),
+                "failure_kind": failure_kind,
+            },
+        )
+    except Exception:
+        pass
+
+
 def _execute_swarm_run(
     run_id: str,
     plan: str,
@@ -58,6 +89,30 @@ def _execute_swarm_run(
 
     from swarm.config import cfg
 
+    cfg.repo_root = repo_path or os.getcwd()
+    cfg.auto_commit = False
+    artifacts_dir = ensure_artifact_dir(cfg.repo_root, run_id)
+    context_pack = build_context_pack(cfg.repo_root, feature_name, plan)
+    artifact_paths = artifact_file_map(cfg.repo_root, run_id)
+    append_event(
+        artifact_paths["events"],
+        make_event(run_id, "run_started", "running", {"builder": builder_type or "auto"}),
+    )
+    with open(artifact_paths["context"], "w", encoding="utf-8") as f:
+        json.dump(context_pack, f, indent=2)
+    context_summary = summarize_context_pack(context_pack)
+    append_event(
+        artifact_paths["events"],
+        make_event(run_id, "context_built", "pass", {"summary": context_summary}),
+    )
+    retrieval_pack = build_retrieval_pack(cfg.repo_root, feature_name, context_pack)
+    with open(artifact_paths["retrieval"], "w", encoding="utf-8") as f:
+        json.dump(retrieval_pack, f, indent=2)
+    retrieval_summary = summarize_retrieval_pack(retrieval_pack)
+    append_event(
+        artifact_paths["events"],
+        make_event(run_id, "retrieval_built", "pass", {"summary": retrieval_summary}),
+    )
     try:
         dispatcher = Dispatcher(cfg)
         result = dispatcher.dispatch(
@@ -72,21 +127,73 @@ def _execute_swarm_run(
             {
                 "status": "complete",
                 "task_id": run_id,
+                "artifacts_dir": artifacts_dir,
+                "context_summary": context_summary,
+                "retrieval_summary": retrieval_summary,
                 "completed_at": result.get("completed_at") or utcnow_iso(),
+            }
+        )
+        append_event(artifact_paths["events"], make_event(run_id, "phase_completed", "pass", {"phase": "dispatch"}))
+        append_event(
+            artifact_paths["events"],
+            make_event(
+                run_id,
+                "phase_completed",
+                "pass",
+                {"phase": "result", "review_iterations": result.get("review_iterations", 0)},
+            ),
+        )
+        if result.get("quality_report"):
+            append_event(artifact_paths["events"], make_event(run_id, "phase_completed", "pass", {"phase": "quality"}))
+        if result.get("polish_report"):
+            append_event(artifact_paths["events"], make_event(run_id, "phase_completed", "pass", {"phase": "polish"}))
+        append_event(artifact_paths["events"], make_event(run_id, "run_completed", "complete"))
+        eval_report = build_eval_report(
+            task_id=run_id,
+            events=read_events(artifact_paths["events"]),
+            final_status="completed",
+            validation_status="warn",
+            review_iterations=result.get("review_iterations", 0),
+            retries=0,
+            failure_kind="",
+        )
+        with open(artifact_paths["eval"], "w", encoding="utf-8") as f:
+            json.dump(eval_report, f, indent=2)
+
+        result.update(
+            {
+                "eval_summary": summarize_eval_report(eval_report),
+                "score": eval_report["score"],
             }
         )
         _last_result = result
         _update_run(run_id, **result)
+        _write_lesson(result)
     except Exception as e:
+        append_event(artifact_paths["events"], make_event(run_id, "run_failed", "failed", {"error": str(e)}))
+        eval_report = build_eval_report(
+            task_id=run_id,
+            events=read_events(artifact_paths["events"]),
+            final_status="failed",
+            validation_status="warn",
+            review_iterations=0,
+            retries=0,
+            failure_kind="execution_failed",
+        )
+        with open(artifact_paths["eval"], "w", encoding="utf-8") as f:
+            json.dump(eval_report, f, indent=2)
         error_result = {
             "status": "error",
             "task_id": run_id,
             "error": str(e),
+            "eval_summary": summarize_eval_report(eval_report),
+            "score": eval_report["score"],
             "traceback": traceback.format_exc()[-2000:],
             "completed_at": utcnow_iso(),
         }
         _last_result = error_result
         _update_run(run_id, **error_result)
+        _write_lesson(error_result, failure_kind="execution_failed")
 
 
 @mcp.tool()
@@ -131,6 +238,9 @@ def run_swarm(
         "repo_path": repo_path or os.getcwd(),
         "repo_url": repo_url,
         "execution_mode": mode,
+        "artifacts_dir": ensure_artifact_dir(repo_path or os.getcwd(), run_id),
+        "context_summary": summarize_context_pack(build_context_pack(repo_path or os.getcwd(), feature_name, plan)),
+        "retrieval_summary": "",
         "started_at": utcnow_iso(),
     }
     _last_result = initial_result

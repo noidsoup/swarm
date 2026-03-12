@@ -240,6 +240,14 @@ class SimpleMemClient:
             print(f"[SimpleMem WARNING] Query failed, using local fallback: {exc}", flush=True)
             return self._query_local(question)
 
+    def query_json(self, question: str) -> dict[str, Any]:
+        """Return parsed query results when available."""
+        raw = self.query(question)
+        parsed = _parse_json_if_possible(raw)
+        if parsed is not None:
+            return parsed
+        return {"results": [], "raw": raw, "source": "unparsed"}
+
     def log_run(self, summary: dict[str, Any]) -> None:
         """Log a run summary after sanitizing obviously sensitive fields."""
         sensitive = {"token", "password", "secret", "api_key", "auth"}
@@ -269,3 +277,16 @@ class SimpleMemClient:
                 **sanitized,
             },
         )
+
+    def add_lesson(self, text: str, metadata: dict[str, Any] | None = None) -> None:
+        """Store a concise sanitized lesson for future retrieval."""
+        sensitive = {"token", "password", "secret", "api_key", "auth"}
+        sanitized: dict[str, Any] = {}
+        for key, value in (metadata or {}).items():
+            if any(marker in key.lower() for marker in sensitive):
+                sanitized[key] = "[REDACTED]"
+            elif isinstance(value, (dict, list)):
+                sanitized[key] = f"{type(value).__name__}({len(value) if hasattr(value, '__len__') else '?'})"
+            else:
+                sanitized[key] = value
+        self.add_memory(text, sanitized)

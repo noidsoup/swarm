@@ -42,12 +42,18 @@ logger = logging.getLogger(__name__)
 class SwarmState(BaseModel):
     feature_request: str = ""
     plan: str = ""
+    context_pack_json: str = ""
+    retrieval_pack_json: str = ""
+    validation_report_json: str = ""
+    eval_report_json: str = ""
+    adaptation_report_json: str = ""
     build_summary: str = ""
     review_feedback: str = ""
     review_iteration: int = 0
     quality_report: str = ""
     polish_report: str = ""
     final_status: str = ""
+    run_artifacts_dir: str = ""
 
 
 def _pick_builder(request: str) -> str:
@@ -98,10 +104,52 @@ class BaseSwarmFlow(Flow[SwarmState]):
         self._agents = build_agents()
         self._builder = builder_type or _pick_builder(feature_request or plan)
 
+    def _context_prompt(self) -> str:
+        if not self.state.context_pack_json:
+            return ""
+        try:
+            context_pack = json.loads(self.state.context_pack_json)
+        except json.JSONDecodeError:
+            return ""
+
+        lines = [
+            "REPO CONTEXT:",
+            f"- Summary: {context_pack.get('repo_summary', 'Unknown repo')}",
+            f"- Builder hint: {context_pack.get('builder_hint', self._builder)}",
+        ]
+        instructions = context_pack.get("instructions", [])
+        if instructions:
+            lines.append(f"- Instructions: {', '.join(instructions[:3])}")
+        risk_areas = context_pack.get("risk_areas", [])
+        if risk_areas:
+            lines.append(f"- Risk areas: {', '.join(risk_areas[:3])}")
+        return "\n".join(lines) + "\n\n"
+
+    def _retrieval_prompt(self) -> str:
+        if not self.state.retrieval_pack_json:
+            return ""
+        try:
+            retrieval_pack = json.loads(self.state.retrieval_pack_json)
+        except json.JSONDecodeError:
+            return ""
+
+        lines = ["RETRIEVAL HINTS:"]
+        files = retrieval_pack.get("files", [])
+        if files:
+            lines.append("- Relevant files: " + ", ".join(item.get("path", "") for item in files[:3]))
+        memories = retrieval_pack.get("memories", [])
+        if memories:
+            memory_text = str(memories[0].get("text", ""))[:180]
+            if memory_text:
+                lines.append(f"- Prior lesson: {memory_text}")
+        if len(lines) == 1:
+            return ""
+        return "\n".join(lines) + "\n\n"
+
     def _run_build_phase(self) -> str:
         _log_phase(f"BUILD ({self._builder})")
         builder = self._agents[self._builder]
-        task = build_task(builder, self.state.plan)
+        task = build_task(builder, f"{self._context_prompt()}{self._retrieval_prompt()}{self.state.plan}")
         crew = solo_crew(builder, task, verbose=cfg.verbose)
         result = crew.kickoff()
         self.state.build_summary = str(result)
@@ -113,7 +161,10 @@ class BaseSwarmFlow(Flow[SwarmState]):
             f"REVIEW (iteration {self.state.review_iteration + 1}/{cfg.max_review_loops})"
         )
         reviewer = self._agents["reviewer"]
-        task = review_task(reviewer, self.state.build_summary)
+        task = review_task(
+            reviewer,
+            f"{self._context_prompt()}{self._retrieval_prompt()}{self.state.build_summary}",
+        )
         crew = solo_crew(reviewer, task, verbose=cfg.verbose)
         result = crew.kickoff()
         self.state.review_feedback = str(result)
@@ -136,7 +187,10 @@ class BaseSwarmFlow(Flow[SwarmState]):
     def _run_fix_phase(self) -> str:
         _log_phase(f"FIX (iteration {self.state.review_iteration})")
         builder = self._agents[self._builder]
-        task = fix_task(builder, self.state.review_feedback)
+        task = fix_task(
+            builder,
+            f"{self._context_prompt()}{self._retrieval_prompt()}{self.state.review_feedback}",
+        )
         crew = solo_crew(builder, task, verbose=cfg.verbose)
         result = crew.kickoff()
         self.state.build_summary += f"\n\n--- Fix iteration {self.state.review_iteration} ---\n{result}"
@@ -156,7 +210,7 @@ class BaseSwarmFlow(Flow[SwarmState]):
     def _run_quality_phase(self) -> str:
         _log_phase("QUALITY GATES")
         agents = self._agents
-        summary = self.state.build_summary
+        summary = f"{self._context_prompt()}{self._retrieval_prompt()}{self.state.build_summary}"
 
         sec_t = security_task(agents["security"], summary)
         perf_t = performance_task(agents["performance"], summary)
@@ -176,7 +230,7 @@ class BaseSwarmFlow(Flow[SwarmState]):
     def _run_polish_phase(self) -> str:
         _log_phase("POLISH")
         agents = self._agents
-        summary = self.state.build_summary
+        summary = f"{self._context_prompt()}{self._retrieval_prompt()}{self.state.build_summary}"
 
         ref_t = refactor_task(agents["refactorer"], summary)
         doc_t = docs_task(agents["docs"], summary)

@@ -38,10 +38,17 @@ class TaskResult(BaseModel):
     created_at: str = ""
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
+    context_summary: str = ""
+    retrieval_summary: str = ""
+    validation_summary: str = ""
+    eval_summary: str = ""
+    adaptation_summary: str = ""
     build_summary: str = ""
     review_feedback: str = ""
     quality_report: str = ""
     polish_report: str = ""
+    artifacts_dir: str = ""
+    failure_kind: str = ""
     error: str = ""
     log: list[str] = Field(default_factory=list)
 

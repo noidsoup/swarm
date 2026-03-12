@@ -40,6 +40,9 @@ class SwarmConfig:
     shell_timeout: int = field(
         default_factory=lambda: int(os.getenv("SHELL_TIMEOUT", "60"))
     )
+    adaptation_max_retries: int = field(
+        default_factory=lambda: int(os.getenv("ADAPTATION_MAX_RETRIES", "2"))
+    )
     max_review_loops: int = 3
     verbose: bool = True
     repo_root: str = field(default_factory=lambda: os.getcwd())
