@@ -557,3 +557,4 @@ Replace IP/username/key path if different. Expect `"status": "complete"` and a r
 - [ ] On Windows, set `WINDOWS_CURSOR_TASK_TIMEOUT=1800`, restart worker, and rerun one tiny real append task.
 - [ ] If timeout persists, inspect `%TEMP%\\swarm-worker.log` and adjust model/keep-alive settings.
 - [ ] Keep using fast smoke only for transport checks; use real tiny edits for behavior validation.
+- [ ] Backlog: add Tailscale-based connectivity so Mac can offload to Windows when not on the same local network.
