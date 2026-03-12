@@ -60,6 +60,27 @@ python scripts/swarm_remote.py status <task-id>
 python scripts/swarm_remote.py log <task-id>
 ```
 
+## Test the whole system
+
+Two ways to test:
+
+**A) Windows-only (single machine)** — Full pipeline on this box (Ollama must be running):
+```powershell
+cd c:\Users\nicho\repos\swarm
+python run.py --no-commit "Add a one-line comment to README.md"
+```
+Expect: PLAN → BUILD → REVIEW → … (allow several minutes). Check README in the repo you targeted (default: this repo).
+
+**B) Mac → Windows (full offload)** — Mac dispatches, Windows runs the task. Best proof the "whole system" works:
+1. **On Windows (you):** Start the worker (see "Cursor smoke test" below). Use fast smoke first: `.\scripts\cursor-worker.ps1 start -Fast`.
+2. **On Mac:** Pull latest, set `WINDOWS_HOST`, `WINDOWS_USER`, `WINDOWS_SSH_KEY`, then run:
+   `python3 scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/nicho/AppData/Local/Temp/smoke-repo"`
+3. Expect `"status": "complete"` and a short `build_summary` (with fast smoke, within ~1 min).
+
+Smoke repo path on Windows: `C:\Users\nicho\AppData\Local\Temp\smoke-repo` (already has README.md / app.py).
+
+---
+
 ## Cursor smoke test (Mac → Windows)
 
 Use this to verify the cursor worker path works end-to-end.
@@ -134,6 +155,20 @@ Or manually stop: read PID from `%TEMP%\swarm-worker.pid`, then `Stop-Process -I
 - Session continuity log: `AI_SESSION_MEMORY.md`
 
 When updating workflow conventions, keep these files in sync so future sessions inherit the same defaults.
+
+## Read memory for next steps
+
+To surface the latest next steps from session memory, handoffs, and the plan (no SimpleMem backend required):
+
+```bash
+python simplemem_cli.py next-steps
+```
+
+Optional: `--repo-root .` (default) or another path. Output includes:
+
+- **Next steps** from the last entries in `AI_SESSION_MEMORY.md`
+- **Immediate Next Steps** and **Resume Advice** from the latest handoff in `.claude/handoffs/` or `.cursor/handoffs/`
+- **Pending plan items** (unchecked `- [ ]` lines) from `.cursor/plans/PLAN.md`
 
 ## Testing
 

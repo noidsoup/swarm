@@ -21,6 +21,64 @@ def parse_metadata(metadata_args: list[str]) -> dict[str, Any]:
     return metadata
 
 
+def read_next_steps(repo_root: str | Path) -> str:
+    """Read next steps from AI_SESSION_MEMORY.md, latest handoff, and PLAN.md. No SimpleMem required."""
+    root = Path(repo_root)
+    out: list[str] = []
+
+    # 1) AI_SESSION_MEMORY.md — all "**Next steps**" / "**Next concrete steps**" blocks (last 2)
+    session_path = root / "AI_SESSION_MEMORY.md"
+    if session_path.exists():
+        content = session_path.read_text(encoding="utf-8")
+        blocks = re.findall(
+            r"\*\*Next (?:concrete )?steps\*\*\s*\n(.*?)(?=\n\*\*[A-Z]|\n## |\Z)",
+            content,
+            re.DOTALL | re.IGNORECASE,
+        )
+        blocks = [b.strip() for b in blocks if b.strip()][-2:]
+        if blocks:
+            out.append("--- Next steps (AI_SESSION_MEMORY.md) ---")
+            out.append("\n\n".join(blocks))
+
+    # 2) Latest handoff — Immediate Next Steps + Resume Advice
+    handoff_dirs = [root / ".claude" / "handoffs", root / ".cursor" / "handoffs"]
+    for handoff_dir in handoff_dirs:
+        if not handoff_dir.is_dir():
+            continue
+        md_files = sorted(handoff_dir.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for hpath in md_files[:1]:
+            hcontent = hpath.read_text(encoding="utf-8")
+            for header in ("## Immediate Next Steps", "## Resume Advice"):
+                pat = re.escape(header) + r"\s*\n(.*?)(?=\n## |\Z)"
+                m = re.search(pat, hcontent, re.DOTALL)
+                if m:
+                    block = m.group(1).strip()
+                    if block:
+                        label = header.replace("## ", "").strip()
+                        out.append(f"--- {label} ({hpath.name}) ---")
+                        out.append(block)
+            break
+        break
+
+    # 3) PLAN.md — first few unchecked items (top of file)
+    plan_path = root / ".cursor" / "plans" / "PLAN.md"
+    if not plan_path.exists():
+        plan_path = root / "PLAN.md"
+    if plan_path.exists():
+        content = plan_path.read_text(encoding="utf-8")
+        unchecked = re.findall(r"^-\s+\[ \]\s+(.+)", content, re.MULTILINE)
+        if unchecked:
+            out.append("--- Pending plan items (PLAN.md) ---")
+            for line in unchecked[:12]:
+                out.append(f"- [ ] {line.strip()}")
+            if len(unchecked) > 12:
+                out.append(f"... and {len(unchecked) - 12} more")
+
+    if not out:
+        return "No next steps found in AI_SESSION_MEMORY.md, handoffs, or PLAN.md."
+    return "\n\n".join(out)
+
+
 def import_ai_session(file_path: str, client: SimpleMemClient) -> None:
     """Import sections from AI_SESSION_MEMORY.md."""
     path = Path(file_path)
@@ -140,9 +198,26 @@ def main() -> None:
 
     subparsers.add_parser("sync", help="Re-import everything into the local store")
 
+    next_steps_parser = subparsers.add_parser(
+        "next-steps",
+        help="Read next steps from AI_SESSION_MEMORY.md, handoffs, and PLAN.md (no SimpleMem required)",
+    )
+    next_steps_parser.add_argument(
+        "--repo-root",
+        default=".",
+        type=str,
+        help="Repo root (default: current directory)",
+    )
+
     args = parser.parse_args()
     settings = load_simplemem_settings()
     client = SimpleMemClient(settings)
+
+    # next-steps reads from files only; no SimpleMem backend required
+    if args.cmd == "next-steps":
+        text = read_next_steps(args.repo_root)
+        print(text)
+        return
 
     if not settings.enabled:
         print("Warning: SimpleMem is disabled. Set SIMPLEMEM_ENABLED=true in .env.")
