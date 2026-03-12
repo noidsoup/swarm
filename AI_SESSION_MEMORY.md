@@ -456,3 +456,30 @@ Replace IP/username/key path if different. Expect `"status": "complete"` and a r
 
 **Windows next action**
 - Continue from `swarm-65fbfeb893a5` in Windows logs/outbox and tune worker/model runtime before rerun.
+
+---
+
+## 2026-03-12 — Mac offload run completed successfully
+
+**Branch:** main
+**PR:** none (direct sync requested)
+
+**Completed**
+- Pulled latest and reran the same Mac offload command in `--mode cursor` with:
+  - `WINDOWS_CURSOR_TIMEOUT=400`
+  - `WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=120`
+  - `WINDOWS_SSH_KEY=/Users/nicholas/.ssh/id_ed25519_nopass`
+  - `WINDOWS_HOST=192.168.87.126`
+  - `WINDOWS_USER=nicho`
+- Run completed successfully on Windows:
+  - `task_id=swarm-bea0f2a28206`
+  - `status=complete`
+  - `execution_mode=cursor`
+
+**Observed output**
+- `build_summary` returned a tool action payload indicating a write operation (`write_file`) for `test.txt` with content `"Hello, world!"`.
+- Runtime was long (~7 minutes), but the end-to-end offload path completed.
+
+**Interpretation**
+- Mac->Windows cursor-mode offload is now proven for real execution (not just immediate smoke responses).
+- Current primary concern is performance/latency tuning, not basic transport reliability.
