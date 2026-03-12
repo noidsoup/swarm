@@ -84,6 +84,15 @@ python scripts/swarm_remote.py log <task-id>
 - For API design/contract changes in `swarm/api.py`, apply `api-design-principles`.
 - For CI workflow edits (`.github/workflows/**`), apply `github-actions-templates`.
 
+## Agent guidance artifacts
+
+- Frontend/framework guidance rule: `.cursor/rules/context7-vercel.mdc`
+- Core orchestrator guidance rule: `.cursor/rules/orchestrator-skills.mdc`
+- Primary project instructions: `AGENTS.md`
+- Session continuity log: `AI_SESSION_MEMORY.md`
+
+When updating workflow conventions, keep these files in sync so future sessions inherit the same defaults.
+
 ## Testing
 
 ```bash

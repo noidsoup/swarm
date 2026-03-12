@@ -126,3 +126,36 @@ Session summaries and state for the AI Dev Swarm project.
 - Investigate `qwen2.5-coder:7b` cold-start timeout root cause on RTX 4070
 - Test full pipeline completion end-to-end (build → review → quality → polish → complete)
 - Add CI workflow for pytest + ruff
+
+---
+
+## 2026-03-12 — Context7/Vercel and orchestrator skill routing close-out
+
+**Branch:** main
+**PR:** none at time of entry (close-out PR created immediately after this update)
+
+**Completed**
+- Added always-on rule `.cursor/rules/context7-vercel.mdc` to prioritize `user-context7` for version-sensitive docs and route React/Next work through Vercel-focused skills.
+- Added always-on rule `.cursor/rules/orchestrator-skills.mdc` mapping orchestrator code areas to Python/MCP/API/CI skills.
+- Updated `AGENTS.md` with "Context7 and Vercel Skill Defaults" and "Orchestrator Skill Defaults".
+- Updated `AI_RUNBOOK.md` with operational workflow notes for Context7/Vercel and orchestrator skill routing.
+- Verified requested orchestrator skills are available locally (`python-*`, `mcp-builder`, `api-design-principles`, `github-actions-templates`).
+- Pushed two direct `main` commits before this close-out pass (`600a91a`, `80c3068`).
+
+**Current state / in progress**
+- Working tree is in close-out mode only: session memory/runbook are being updated and finalized via PR merge.
+- Project now has explicit always-on routing for both frontend (Context7 + Vercel) and core orchestrator maintenance skills.
+
+**Key decisions (and why)**
+- Keep skill routing in repo-local always-on rules to ensure consistent behavior across sessions without relying on ad-hoc prompts.
+- Use Context7 as first source for version-sensitive framework behavior to reduce stale guidance risk.
+- Split frontend and orchestrator routing into separate rule files for clarity and easier maintenance.
+
+**Known risks / blockers**
+- Skill routing depends on local skill availability in the agent environment; if a skill is removed globally, behavior may degrade to default handling.
+- Rule drift is possible if project architecture changes and file-to-skill mapping is not refreshed.
+
+**Next concrete steps**
+- [ ] Validate close-out PR merge and ensure `main` contains updated memory/runbook entries.
+- [ ] Optionally add a short pointer in `README.md` to `.cursor/rules/context7-vercel.mdc` and `.cursor/rules/orchestrator-skills.mdc`.
+- [ ] Add CI coverage (`ruff` + `pytest`) if not already active for this branch state.
