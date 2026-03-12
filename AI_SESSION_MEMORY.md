@@ -309,19 +309,21 @@ When the user wants a real smoke (no skip), the Mac should use this flow:
 
 ## Real test instructions (copy-paste)
 
-**Windows (this machine):** Worker must be running with real smoke (no skip).
+**Windows (this machine):** Worker must be running with real smoke (no skip). Unset skip so the run uses the real LLM.
 ```powershell
 .\scripts\cursor-worker.ps1 stop
+Remove-Item Env:SWARM_SMOKE_SKIP_LLM -ErrorAction SilentlyContinue
 .\scripts\cursor-worker.ps1 start
 ```
 (300s task timeout, no `SWARM_SMOKE_SKIP_LLM`. Smoke repo: `C:\Users\nicho\AppData\Local\Temp\smoke-repo`.)
 
-**Mac:** Run this (allow 3–5 min).
+**Mac:** Run this (allow 3–5 min). `WINDOWS_SSH_KEY` is required for SSH auth.
 ```bash
 export WINDOWS_CURSOR_TIMEOUT=400 WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=120
+export WINDOWS_SSH_KEY=/Users/nicholas/.ssh/id_ed25519_nopass
 WINDOWS_HOST=192.168.87.126 WINDOWS_USER=nicho python3 scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/nicho/AppData/Local/Temp/smoke-repo"
 ```
-Replace IP/username if different. Expect `"status": "complete"` or a clear error; if timeout, increase worker timeout on Windows and retry.
+Replace IP/username/key path if different. Expect `"status": "complete"` and a real `build_summary` (no "Pipeline check only (SWARM_SMOKE_SKIP_LLM=1)"); if timeout, increase worker timeout on Windows and retry.
 
 ---
 
