@@ -62,6 +62,16 @@ python scripts/swarm_remote.py log <task-id>
 | `WORKER_FALLBACK_MODEL` | `ollama/gemma3:4b` | Auto-fallback on Ollama runner timeout |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API endpoint |
 
+## Context7 and Vercel-skill workflow
+
+- Use `user-context7` for current framework/library docs before implementing version-sensitive changes.
+- React/Next.js requests should route through these skills when applicable:
+  - `vercel-react-best-practices`
+  - `next-best-practices`
+  - `next-cache-components`
+  - `next-upgrade` for migrations
+- Vercel deployment requests should use `vercel-deploy` and default to preview deploys.
+
 ## Testing
 
 ```bash

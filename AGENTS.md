@@ -29,6 +29,16 @@
 - `wordpress_dev` is used for WordPress/PHP/plugin requests
 - `shopify_dev` is used for Shopify/Liquid/theme requests
 
+## Context7 and Vercel Skill Defaults
+
+- For framework/library behavior, version-specific APIs, and migration guidance, query `user-context7` first.
+- For React/Next.js tasks, apply Vercel-oriented skills when relevant:
+  - `vercel-react-best-practices`
+  - `next-best-practices`
+  - `next-cache-components`
+  - `next-upgrade` (for migrations)
+- For deployment requests targeting Vercel, use `vercel-deploy` and default to preview deploys unless production is explicitly requested.
+
 ## Change Guidelines
 
 - Keep the flow pipeline deterministic: BUILD -> REVIEW LOOP -> QUALITY -> POLISH

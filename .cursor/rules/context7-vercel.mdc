@@ -1,0 +1,16 @@
+---
+description: Use Context7 for live docs and route React/Next tasks through Vercel skills
+alwaysApply: true
+---
+
+# Context7 + Vercel Defaults
+
+- For framework/library questions, dependency upgrades, and API usage details, query `user-context7` first for up-to-date docs and examples.
+- Treat Context7 as the source of truth for version-sensitive behavior (especially Next.js, React, Vercel platform APIs, and migration guidance).
+- For React/Next.js implementation work, apply relevant Vercel-focused skills:
+  - `vercel-react-best-practices` for performance and code quality
+  - `next-best-practices` for App Router/RSC/data patterns
+  - `next-cache-components` for Next.js 16 caching/PPR patterns
+  - `next-upgrade` for version migrations
+- For Vercel deploy requests, use `vercel-deploy` and default to preview deployments unless production is explicitly requested.
+- If Context7 docs conflict with stale local guidance, prefer Context7 and update project docs/rules to match.
