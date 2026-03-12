@@ -409,3 +409,27 @@ Replace IP/username/key path if different. Expect `"status": "complete"` and a r
 **After Windows confirms foreground run**
 - Mac should rerun:
   - `WINDOWS_CURSOR_TIMEOUT=400 WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=120 WINDOWS_SSH_KEY=/Users/nicholas/.ssh/id_ed25519_nopass WINDOWS_HOST=192.168.87.126 WINDOWS_USER=nicho python3 scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/nicho/AppData/Local/Temp/smoke-repo"`
+
+---
+
+## 2026-03-12 — Latest Mac rerun after pull (for Windows follow-up)
+
+**Branch:** main
+**PR:** none (direct sync requested)
+
+**Completed**
+- Pulled latest `main` (`ba769bc -> 9990808`) on Mac.
+- Reran the same offload command with:
+  - `WINDOWS_CURSOR_TIMEOUT=400`
+  - `WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=120`
+  - `WINDOWS_SSH_KEY=/Users/nicholas/.ssh/id_ed25519_nopass`
+  - `WINDOWS_HOST=192.168.87.126`
+  - `WINDOWS_USER=nicho`
+
+**Outcome**
+- Task submitted and reached Windows, but polling ended with heartbeat stall:
+  - `task_id=swarm-33cee06a3476`
+  - `TimeoutError: Cursor worker heartbeat stalled`
+
+**Windows next action**
+- Continue troubleshooting from `swarm-33cee06a3476` (worker logs + outbox state), then rerun the same Mac command once Windows-side issue is resolved.
