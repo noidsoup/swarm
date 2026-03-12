@@ -4,6 +4,14 @@
 
 `swarm` is an AI coding orchestrator. Cursor acts as the commander; the project runs builder, reviewer, quality, and polish agents through CrewAI flows.
 
+## Offloading AI to Windows
+
+The goal is to run complex AI tasks from the Mac and have the heavy work happen on the Windows machine (e.g. Docker, services, or GPU there). You can use **Ollama** (remote on Windows) or **Cursor AI** from the Mac; the local LLM on Windows is **optional** — just one path.
+
+- **Path A — Remote Ollama:** Mac runs the swarm (orchestration); set `OLLAMA_BASE_URL` to the Windows Ollama URL. All model inference runs on Windows; no swarm process required on Windows, only Ollama.
+- **Path B — Cursor / worker on Windows:** Mac sends tasks (e.g. cursor mode inbox/outbox, or API); Windows runs the worker (and optionally Ollama there). Full pipeline can run on Windows; Mac triggers and polls.
+- **Path C — Cursor AI from Mac:** Use Cursor’s models from the Mac (Docker, MCP, or other integration) with Windows as the execution or inference target where needed. Local LLM on Windows is optional.
+
 ## Operational Truths (Read First)
 
 - The orchestrator is this repo and is typically run from the Mac checkout (`/Users/nicholas/Repos/swarm`).

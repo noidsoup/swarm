@@ -4,6 +4,12 @@ Operational guide for working with the AI Dev Swarm project.
 
 ---
 
+## Offloading AI to Windows
+
+You can use **Ollama** (remote on Windows) or **Cursor AI** from the Mac; a local LLM on Windows is **optional** (one path). See **AGENTS.md → Offloading AI to Windows** for the three paths: (A) Remote Ollama, (B) Cursor/worker on Windows, (C) Cursor AI from Mac with Windows as execution/inference target.
+
+---
+
 ## Project layout
 
 ```
