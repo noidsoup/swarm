@@ -289,3 +289,18 @@ Session summaries and state for the AI Dev Swarm project.
    ```  
 4. [ ] Expect: `"status": "complete"` and `build_summary` containing `SMOKE_OK` / `SWARM_SMOKE_SKIP_LLM` within about a minute.  
 5. [ ] If you see timeout or SSH errors: note the exact Mac command and full output (and if possible the Windows worker log tail) for debugging.
+
+**Real (non-skip) smoke — Mac runs the actual LLM**  
+When the user wants a real smoke (no skip), the Mac should use this flow:
+
+- **Windows first:** Stop any fast worker, then start the worker **without** `-Fast` so the real LLM runs:  
+  `.\scripts\cursor-worker.ps1 stop`  
+  `.\scripts\cursor-worker.ps1 start`  
+  (Worker will have 300s task timeout, no `SWARM_SMOKE_SKIP_LLM`.)
+- **On Mac:** Set client timeouts so the client doesn’t give up before the worker (allow 3–5 min), then run the same dispatch:  
+  ```bash  
+  export WINDOWS_CURSOR_TIMEOUT=400  
+  export WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=120  
+  WINDOWS_HOST=192.168.87.126 WINDOWS_USER=nicho python3 scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/nicho/AppData/Local/Temp/smoke-repo"  
+  ```  
+  Use your real Windows IP and username if different. Expect the run to take several minutes; if it still times out, increase the worker timeout on Windows (e.g. 600s) and retry.
