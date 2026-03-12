@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 import os
 import time
@@ -86,12 +87,13 @@ class Dispatcher:
             self.cfg.repo_root = repo_path
         self.cfg.auto_commit = False
 
-        flow = WorkerSwarmFlow(
-            plan=plan,
-            feature_request=feature_name,
-            builder_type=builder_type,
-        )
-        flow.kickoff()
+        with _working_directory(repo_path or self.cfg.repo_root):
+            flow = WorkerSwarmFlow(
+                plan=plan,
+                feature_request=feature_name,
+                builder_type=builder_type,
+            )
+            flow.kickoff()
         return {
             "status": "complete",
             "builder": flow._builder,
@@ -176,3 +178,14 @@ class Dispatcher:
             "repo_url": repo_url,
         }
         return client.submit_and_wait(task_payload)
+
+
+@contextmanager
+def _working_directory(path: str):
+    current = os.getcwd()
+    target = path or current
+    os.chdir(target)
+    try:
+        yield
+    finally:
+        os.chdir(current)
