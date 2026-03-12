@@ -259,3 +259,33 @@ Session summaries and state for the AI Dev Swarm project.
 - [ ] On Windows, start a fresh worker with `SWARM_SMOKE_SKIP_LLM=1` and `--task-timeout 300`, then run one Mac dispatch with explicit `WINDOWS_HOST`/`WINDOWS_SSH_KEY`.
 - [ ] Capture one confirmed `status=complete` payload and paste into this memory log.
 - [ ] Add a tiny helper script for Windows worker start/stop to reduce daemon drift between smoke reruns.
+
+---
+
+## Plan: Test cursor smoke for real from Mac (2026-03-12)
+
+**Purpose:** When you are on the Mac and the user says they are testing the system for real, follow this plan so the Mac knows what to do.
+
+**Prerequisites (must be done on Windows before Mac test)**  
+- [ ] On Windows, in the swarm repo: start the worker with fast smoke so the test finishes quickly:  
+  `.\scripts\cursor-worker.ps1 start -Fast`  
+  (Or check status: `.\scripts\cursor-worker.ps1 status`.)  
+- [ ] A small smoke repo exists on the Windows machine, e.g.  
+  `C:\Users\<you>\AppData\Local\Temp\smoke-repo` with at least `app.py` or `README.md`.
+
+**On Mac (this checkout)**  
+1. [ ] Pull latest: `git pull origin main`  
+2. [ ] Ensure env for cursor mode (in shell or `.env`):  
+   - `WINDOWS_HOST` = Windows IP (e.g. `192.168.87.126`)  
+   - `WINDOWS_USER` = Windows username (e.g. `nicho`)  
+   - Optional: `WINDOWS_SSH_KEY` = path to key used for SSH to Windows  
+3. [ ] From the swarm repo root, run the smoke (path must exist on Windows):  
+   ```bash  
+   python3 scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"  
+   ```  
+   Or with explicit env:  
+   ```bash  
+   WINDOWS_HOST=192.168.87.126 WINDOWS_USER=nicho python3 scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/nicho/AppData/Local/Temp/smoke-repo"  
+   ```  
+4. [ ] Expect: `"status": "complete"` and `build_summary` containing `SMOKE_OK` / `SWARM_SMOKE_SKIP_LLM` within about a minute.  
+5. [ ] If you see timeout or SSH errors: note the exact Mac command and full output (and if possible the Windows worker log tail) for debugging.
