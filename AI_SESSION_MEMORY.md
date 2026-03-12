@@ -304,3 +304,21 @@ When the user wants a real smoke (no skip), the Mac should use this flow:
   WINDOWS_HOST=192.168.87.126 WINDOWS_USER=nicho python3 scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/nicho/AppData/Local/Temp/smoke-repo"  
   ```  
   Use your real Windows IP and username if different. Expect the run to take several minutes; if it still times out, increase the worker timeout on Windows (e.g. 600s) and retry.
+
+---
+
+## Real test instructions (copy-paste)
+
+**Windows (this machine):** Worker must be running with real smoke (no skip).
+```powershell
+.\scripts\cursor-worker.ps1 stop
+.\scripts\cursor-worker.ps1 start
+```
+(300s task timeout, no `SWARM_SMOKE_SKIP_LLM`. Smoke repo: `C:\Users\nicho\AppData\Local\Temp\smoke-repo`.)
+
+**Mac:** Run this (allow 3–5 min).
+```bash
+export WINDOWS_CURSOR_TIMEOUT=400 WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=120
+WINDOWS_HOST=192.168.87.126 WINDOWS_USER=nicho python3 scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/nicho/AppData/Local/Temp/smoke-repo"
+```
+Replace IP/username if different. Expect `"status": "complete"` or a clear error; if timeout, increase worker timeout on Windows and retry.
