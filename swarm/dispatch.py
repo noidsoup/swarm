@@ -104,7 +104,12 @@ class Dispatcher:
             )
             flow.state.run_artifacts_dir = artifact_dir
             if smoke_profile:
-                flow.run_selected_phases(["build"])
+                if os.getenv("SWARM_SMOKE_SKIP_LLM", "").lower() in ("1", "true", "yes"):
+                    flow.state.build_summary = (
+                        "STATUS: SMOKE_OK\nNOTE: Pipeline check only (SWARM_SMOKE_SKIP_LLM=1)."
+                    )
+                else:
+                    flow.run_selected_phases(["build"])
             else:
                 flow.kickoff()
         return {

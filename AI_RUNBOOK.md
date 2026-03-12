@@ -60,9 +60,9 @@ Use this to verify the cursor worker path works end-to-end.
 
 **1. On Windows** (in the swarm repo, with Ollama running):
 ```powershell
-# Optional: set a short timeout so smoke finishes quickly (default 3600)
-$env:WINDOWS_CURSOR_TASK_TIMEOUT = "120"
-python scripts/cursor_worker.py --daemon --poll-interval 2 --task-timeout 120 --log-file "$env:TEMP\swarm-worker.log" --pid-file "$env:TEMP\swarm-worker.pid"
+# Smoke can take 3–5 min on first run; use 300s so it can finish (default 3600)
+$env:WINDOWS_CURSOR_TASK_TIMEOUT = "300"
+python scripts/cursor_worker.py --daemon --poll-interval 2 --task-timeout 300 --log-file "$env:TEMP\swarm-worker.log" --pid-file "$env:TEMP\swarm-worker.pid"
 ```
 
 **2. On Mac** (in the swarm repo; SSH to Windows and env set per `.env` / REMOTE_SETUP.md):
@@ -71,7 +71,9 @@ python scripts/cursor_worker.py --daemon --poll-interval 2 --task-timeout 120 --
 python scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"
 ```
 
-**3. Expect:** Command returns with `"status": "complete"` and a short `build_summary`, or a clear `error` (e.g. timeout). Smoke tasks use a minimal prompt (read one file, no edits) so they should finish within the worker timeout.
+**3. Expect:** Command returns with `"status": "complete"` and a short `build_summary`, or a clear `error` (e.g. timeout).
+
+**Fast smoke (no LLM):** On Windows, set `SWARM_SMOKE_SKIP_LLM=1` before starting the worker so the smoke task skips the model and returns immediately. Use this to verify the pipeline end-to-end without waiting for the model. Without it, smoke uses a minimal prompt (read one file, no edits); allow 3–5 minutes or increase the worker timeout.
 
 **4. Stop the worker on Windows** (if needed):
 ```powershell

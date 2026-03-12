@@ -80,6 +80,7 @@ def test_dispatch_local_uses_lightweight_profile_for_smoke_tasks(tmp_path: Path,
     fake_module.WorkerSwarmFlow = FakeFlow
     monkeypatch.setitem(sys.modules, "swarm.flow", fake_module)
     monkeypatch.setenv("WORKER_FALLBACK_MODEL", "ollama/gemma3:4b")
+    monkeypatch.setenv("SWARM_SMOKE_SKIP_LLM", "0")
 
     original_worker_model = cfg.worker_model
     original_max_reviews = cfg.max_review_loops
@@ -107,6 +108,27 @@ def test_dispatch_local_uses_lightweight_profile_for_smoke_tasks(tmp_path: Path,
 
     cfg.worker_model = original_worker_model
     cfg.max_review_loops = original_max_reviews
+
+
+def test_dispatch_local_smoke_skip_llm_returns_immediately(tmp_path: Path, monkeypatch) -> None:
+    """With SWARM_SMOKE_SKIP_LLM=1, smoke task skips LLM and returns fixed build_summary."""
+    monkeypatch.setenv("SWARM_SMOKE_SKIP_LLM", "1")
+    cfg = SimpleNamespace(
+        default_execution_mode="local",
+        repo_root=str(tmp_path),
+        auto_commit=True,
+    )
+    dispatcher = Dispatcher(cfg)
+    result = dispatcher.dispatch(
+        plan="cursor smoke test",
+        feature_name="cursor smoke test",
+        builder_type="python_dev",
+        repo_path=str(tmp_path),
+        execution_mode="local",
+    )
+    assert result["status"] == "complete"
+    assert "SMOKE_OK" in result["build_summary"]
+    assert "SWARM_SMOKE_SKIP_LLM" in result["build_summary"]
 
 
 def test_dispatch_local_sets_run_artifacts_dir_under_repo(tmp_path: Path, monkeypatch) -> None:
