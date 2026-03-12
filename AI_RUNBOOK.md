@@ -73,6 +73,40 @@ Timeout knobs:
 - `WINDOWS_CURSOR_HEARTBEAT_TIMEOUT`
 - `WINDOWS_CURSOR_TASK_TIMEOUT` (worker side)
 
+### Windows "ready" sequence for real cursor runs
+
+Run this on Windows every time before Mac dispatches a real task:
+
+```powershell
+cd C:\Users\<you>\repos\swarm
+git checkout main
+git pull
+
+.\scripts\cursor-worker.ps1 stop
+$env:WINDOWS_CURSOR_TASK_TIMEOUT = "1800"
+Remove-Item Env:SWARM_SMOKE_SKIP_LLM -ErrorAction SilentlyContinue
+.\scripts\cursor-worker.ps1 start
+.\scripts\cursor-worker.ps1 status
+```
+
+Expected:
+
+- Worker status prints `Worker running PID ...`
+- Start output reflects the timeout from your env (for example `1800s`), not a forced `600s`
+
+Optional diagnostics:
+
+```powershell
+echo $env:WINDOWS_CURSOR_TASK_TIMEOUT
+Get-Content "$env:TEMP\swarm-worker.log" -Tail 120
+```
+
+Then dispatch from Mac:
+
+```bash
+WINDOWS_CURSOR_TIMEOUT=900 WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=180 WINDOWS_SSH_KEY="$HOME/.ssh/id_ed25519_nopass" WINDOWS_HOST=<windows-ip> WINDOWS_USER=<windows-user> python3 scripts/swarm_remote.py dispatch "<task prompt>" --mode cursor --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"
+```
+
 ## 5) MCP Operations
 
 From `swarm/mcp_server.py`, supported tools:
