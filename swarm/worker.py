@@ -85,6 +85,36 @@ def _validate_repo_url(repo_url: str) -> None:
         raise ValueError(f"Refusing private repo URL: {repo_url}")
 
 
+def _is_ollama_runner_startup_timeout(exc: Exception) -> bool:
+    """Detect Ollama runner startup timeout failures that can be retried."""
+    msg = str(exc).lower()
+    return (
+        "timed out waiting for llama runner to start" in msg
+        or ("ollamaexception" in msg and "runner" in msg and "timed out" in msg)
+    )
+
+
+def _fallback_worker_model() -> str:
+    """Fallback model for unstable local Ollama runners."""
+    return os.getenv("WORKER_FALLBACK_MODEL", "ollama/gemma3:4b")
+
+
+def _execute_flow(task, cfg):
+    """Build and execute a worker flow for a queued task."""
+    _log(task.task_id, "Importing WorkerSwarmFlow...")
+    from swarm.flow import WorkerSwarmFlow
+
+    flow = WorkerSwarmFlow(
+        plan=task.plan or task.feature,
+        feature_request=task.feature,
+        builder_type=task.builder_type,
+    )
+
+    _log(task.task_id, "Running agent pipeline...")
+    flow.kickoff()
+    return flow
+
+
 def _run_swarm(task_id: str) -> None:
     task = store.get(task_id)
     if not task:
@@ -103,17 +133,24 @@ def _run_swarm(task_id: str) -> None:
         cfg.repo_root = task_dir
         cfg.auto_commit = False
 
-        _log(task_id, "Importing WorkerSwarmFlow...")
-        from swarm.flow import WorkerSwarmFlow
-
-        flow = WorkerSwarmFlow(
-            plan=task.plan or task.feature,
-            feature_request=task.feature,
-            builder_type=task.builder_type,
-        )
-
-        _log(task_id, "Running agent pipeline...")
-        flow.kickoff()
+        try:
+            flow = _execute_flow(task, cfg)
+        except Exception as first_error:
+            if _is_ollama_runner_startup_timeout(first_error):
+                fallback_model = _fallback_worker_model()
+                if fallback_model and fallback_model != cfg.worker_model:
+                    _log(
+                        task_id,
+                        f"Ollama runner startup timed out on {cfg.worker_model}; "
+                        f"retrying with fallback model {fallback_model}.",
+                    )
+                    cfg.worker_model = fallback_model
+                    flow = _execute_flow(task, cfg)
+                    _log(task_id, f"Fallback model {fallback_model} succeeded.")
+                else:
+                    raise
+            else:
+                raise
 
         task = store.get(task_id)
         task.status = TaskStatus.COMPLETED

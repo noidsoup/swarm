@@ -4,6 +4,16 @@
 
 `swarm` is an AI coding orchestrator. Cursor acts as the commander; the project runs builder, reviewer, quality, and polish agents through CrewAI flows.
 
+## Operational Truths (Read First)
+
+- The orchestrator is this repo and is typically run from the Mac checkout (`/Users/nicholas/Repos/swarm`).
+- Ollama does **not** have to run on Mac; workers use `OLLAMA_BASE_URL` from env/config, so it can point to a Windows host (for example `http://192.168.x.x:11434`).
+- Default Ollama endpoint is `http://localhost:11434` when `OLLAMA_BASE_URL` is not overridden.
+- Current runtime advertises an **11-agent** pipeline (`run.py` and `swarm/mcp_server.py`), including `python_dev` plus framework-specialized builders.
+- Quality/polish are implemented as sequential crews in current code; do not describe them as guaranteed parallel execution.
+- Standalone "ship/commit" behavior depends on `AUTO_COMMIT`; default is `false` so commits are skipped unless explicitly enabled.
+- `run_swarm()` in MCP is asynchronous and returns a task ID; use `swarm_status(task_id)` to poll.
+
 ## Main Entry Points
 
 - `run.py`: local CLI for headless and standalone runs
@@ -43,3 +53,9 @@
 - `run_swarm()` is asynchronous and returns a task ID immediately
 - Poll with `swarm_status(task_id)` for final status and summaries
 - Remote API tasks should be safe for untrusted input: validate paths, repo URLs, and shell-adjacent arguments
+
+## Quick Runtime Matrix
+
+- **Headless (recommended):** Cursor plans/judges, swarm executes phases (`build, review, quality, polish`).
+- **Standalone:** Swarm runs planning + execution end-to-end; shipping is only automatic when `AUTO_COMMIT=true`.
+- **Remote Ollama on Windows:** set `OLLAMA_BASE_URL` to the Windows Ollama URL; Mac runs orchestration while Windows provides model inference.

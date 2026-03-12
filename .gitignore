@@ -20,6 +20,13 @@ env/
 
 uncommitted/
 
+# Security: never commit local SSH material
+.ssh/
+**/.ssh/
+**/id_ed25519*
+**/id_rsa*
+**/known_hosts*
+
 # Docker
 workspace/
 monitoring/grafana_data/
