@@ -71,6 +71,12 @@ python scripts/cursor_worker.py --daemon --poll-interval 2 --task-timeout 300 --
 python scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"
 ```
 
+**Mac env required for cursor mode:** `WINDOWS_HOST` and `WINDOWS_USER` must be set (or present in `.env`) when using `--mode cursor`.
+```bash
+WINDOWS_HOST=192.168.x.x WINDOWS_USER=<windows-user> WINDOWS_SSH_KEY="$HOME/.ssh/id_ed25519_nopass" \
+python3 scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"
+```
+
 **3. Expect:** Command returns with `"status": "complete"` and a short `build_summary`, or a clear `error` (e.g. timeout).
 
 **Fast smoke (no LLM):** On Windows, set `SWARM_SMOKE_SKIP_LLM=1` before starting the worker so the smoke task skips the model and returns immediately. Use this to verify the pipeline end-to-end without waiting for the model. Without it, smoke uses a minimal prompt (read one file, no edits); allow 3–5 minutes or increase the worker timeout.
@@ -137,6 +143,7 @@ Key test files:
 | `OllamaException - timed out waiting for llama runner to start` | Automatic: worker retries with `WORKER_FALLBACK_MODEL`. Manual: `ollama stop` then `ollama serve` on Windows |
 | `charmap codec can't encode character` (Windows) | Set `PYTHONIOENCODING=utf-8` or use `run.py` which auto-wraps stdout |
 | `bind [127.0.0.1]:9000: Address already in use` | Kill existing SSH tunnel: `lsof -ti:9000 \| xargs kill` |
+| Cursor mode poll intermittently hangs with `winbox` alias | If `winbox` has `LocalForward` entries and a tunnel is already active, prefer `WINDOWS_HOST=<windows-ip>` + `WINDOWS_SSH_KEY=...` for dispatches (avoids forward-bind noise during repeated SSH polls) |
 | Pytest collects `TestTool` as test class | Already fixed: renamed to `RunTestsTool` |
 | CrewAI "must end with at most one async task" | Already fixed: `quality_crew` no longer forces async |
 

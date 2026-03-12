@@ -228,3 +228,34 @@ Session summaries and state for the AI Dev Swarm project.
 **Next steps (Mac or Windows)**
 - Run the fast smoke from Mac once to confirm end-to-end (worker on Windows with `SWARM_SMOKE_SKIP_LLM=1`).
 - Optionally tune worker timeout or model for full (LLM) smoke if you want that path to pass.
+
+## 2026-03-12 — Mac-run smoke retry and connectivity findings
+
+**Branch:** main
+**PR:** none (direct sync requested)
+
+**Completed**
+- Pulled latest `main` (`4876e8e -> 0bb535e`) and ingested the new smoke-task updates:
+  - smoke timeout guidance raised in runbook
+  - `SWARM_SMOKE_SKIP_LLM` fast-path support in dispatcher/tests
+- Executed Mac-side cursor smoke dispatch attempts from this checkout.
+- Confirmed first failure mode is config-gated: cursor mode requires `WINDOWS_HOST` + `WINDOWS_USER`.
+- Confirmed transport reached Windows when env vars were supplied (task created, terminal outbox responses returned), but task timed out (`Cursor worker task timed out after 90s`) on one run.
+- Confirmed `winbox` alias `LocalForward` bindings can add repeated `bind ... 9000 already in use` noise and make repeated SSH polling less stable.
+
+**Current state / in progress**
+- Smoke path is implemented and reachable, but end-to-end success is still sensitive to runtime budget and SSH invocation style.
+- Most stable Mac invocation observed: direct host + explicit key (`WINDOWS_HOST=<ip>`, `WINDOWS_SSH_KEY=...`) instead of relying on a forwarded alias during poll-heavy runs.
+
+**Key decisions (and why)**
+- Document direct-host cursor dispatch in runbook to reduce alias-related SSH polling flakiness.
+- Keep timeout guidance at 300s (or use `SWARM_SMOKE_SKIP_LLM=1`) for deterministic pipeline validation.
+
+**Known risks / blockers**
+- Windows-side worker lifecycle/log collection still needs one clean, reproducible "single command" flow to avoid stale daemons between reruns.
+- If the same SSH alias is used simultaneously for tunnels and poll-heavy commands, intermittent timing noise can mask real smoke outcomes.
+
+**Next concrete steps**
+- [ ] On Windows, start a fresh worker with `SWARM_SMOKE_SKIP_LLM=1` and `--task-timeout 300`, then run one Mac dispatch with explicit `WINDOWS_HOST`/`WINDOWS_SSH_KEY`.
+- [ ] Capture one confirmed `status=complete` payload and paste into this memory log.
+- [ ] Add a tiny helper script for Windows worker start/stop to reduce daemon drift between smoke reruns.
