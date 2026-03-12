@@ -159,6 +159,19 @@ class SimpleMemClient:
     def _write_local_memories(self, memories: list[dict[str, Any]]) -> None:
         self._local_db_path.write_text(json.dumps(memories, indent=2), encoding="utf-8")
 
+    @staticmethod
+    def _sanitize_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
+        sensitive = {"token", "password", "secret", "api_key", "auth"}
+        sanitized: dict[str, Any] = {}
+        for key, value in (metadata or {}).items():
+            if any(marker in key.lower() for marker in sensitive):
+                sanitized[key] = "[REDACTED]"
+            elif isinstance(value, (dict, list)):
+                sanitized[key] = f"{type(value).__name__}({len(value) if hasattr(value, '__len__') else '?'})"
+            else:
+                sanitized[key] = value
+        return sanitized
+
     def _add_local(self, text: str, metadata: dict[str, Any] | None = None) -> None:
         memories = self._read_local_memories()
         memories.append(
@@ -250,15 +263,7 @@ class SimpleMemClient:
 
     def log_run(self, summary: dict[str, Any]) -> None:
         """Log a run summary after sanitizing obviously sensitive fields."""
-        sensitive = {"token", "password", "secret", "api_key", "auth"}
-        sanitized: dict[str, Any] = {}
-        for key, value in summary.items():
-            if any(marker in key.lower() for marker in sensitive):
-                sanitized[key] = "[REDACTED]"
-            elif isinstance(value, (dict, list)):
-                sanitized[key] = f"{type(value).__name__}({len(value) if hasattr(value, '__len__') else '?'})"
-            else:
-                sanitized[key] = value
+        sanitized = self._sanitize_metadata(summary)
 
         parts = [f"Run: {summary.get('operation', 'unknown')}"]
         if "count" in summary:
@@ -280,13 +285,16 @@ class SimpleMemClient:
 
     def add_lesson(self, text: str, metadata: dict[str, Any] | None = None) -> None:
         """Store a concise sanitized lesson for future retrieval."""
-        sensitive = {"token", "password", "secret", "api_key", "auth"}
-        sanitized: dict[str, Any] = {}
-        for key, value in (metadata or {}).items():
-            if any(marker in key.lower() for marker in sensitive):
-                sanitized[key] = "[REDACTED]"
-            elif isinstance(value, (dict, list)):
-                sanitized[key] = f"{type(value).__name__}({len(value) if hasattr(value, '__len__') else '?'})"
-            else:
-                sanitized[key] = value
-        self.add_memory(text, sanitized)
+        self.add_memory(text, self._sanitize_metadata(metadata))
+
+    def add_lessons(self, lessons: list[dict[str, Any]]) -> None:
+        """Store a small batch of extracted lessons with normalized metadata."""
+        for lesson in lessons[:3]:
+            metadata = {
+                "type": "swarm_lesson",
+                "key": lesson.get("key", ""),
+                "kind": lesson.get("kind", ""),
+                "confidence": lesson.get("confidence", 1),
+                **self._sanitize_metadata(lesson.get("metadata", {})),
+            }
+            self.add_lesson(str(lesson.get("text", "")).strip(), metadata)

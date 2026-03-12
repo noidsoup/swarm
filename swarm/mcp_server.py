@@ -26,6 +26,7 @@ from swarm.context_pack import build_context_pack, summarize_context_pack
 from swarm.evals import (
     append_event,
     build_eval_report,
+    load_recent_eval_reports,
     make_event,
     read_events,
     summarize_eval_report,
@@ -76,6 +77,7 @@ def _with_learning_summaries(payload: dict, *, artifacts_dir: str = "") -> dict:
 def _write_lesson(result: dict, failure_kind: str = "") -> None:
     try:
         client = SimpleMemClient(load_simplemem_settings())
+        client.add_lessons(result.get("lessons", []))
         client.add_lesson(
             (
                 f"MCP swarm run finished with status={result.get('status')} "
@@ -173,6 +175,9 @@ def _execute_swarm_run(
             review_iterations=result.get("review_iterations", 0),
             retries=0,
             failure_kind="",
+            builder=builder_type or "auto",
+            repo_profile=",".join(context_pack.get("stack", {}).get("frameworks", [])[:2]),
+            previous_reports=load_recent_eval_reports(cfg.repo_root, exclude_task_id=run_id),
         )
         with open(artifact_paths["eval"], "w", encoding="utf-8") as f:
             json.dump(eval_report, f, indent=2)
@@ -181,6 +186,8 @@ def _execute_swarm_run(
             {
                 "eval_summary": summarize_eval_report(eval_report),
                 "score": eval_report["score"],
+                "lessons": eval_report.get("lessons", []),
+                "comparison": eval_report.get("comparison", {}),
             }
         )
         result = _with_learning_summaries(result, artifacts_dir=artifacts_dir)
@@ -197,6 +204,9 @@ def _execute_swarm_run(
             review_iterations=0,
             retries=0,
             failure_kind="execution_failed",
+            builder=builder_type or "auto",
+            repo_profile=",".join(context_pack.get("stack", {}).get("frameworks", [])[:2]),
+            previous_reports=load_recent_eval_reports(cfg.repo_root, exclude_task_id=run_id),
         )
         with open(artifact_paths["eval"], "w", encoding="utf-8") as f:
             json.dump(eval_report, f, indent=2)
@@ -207,6 +217,8 @@ def _execute_swarm_run(
             "error": str(e),
             "eval_summary": summarize_eval_report(eval_report),
             "score": eval_report["score"],
+            "lessons": eval_report.get("lessons", []),
+            "comparison": eval_report.get("comparison", {}),
             "traceback": traceback.format_exc()[-2000:],
             "completed_at": utcnow_iso(),
             },

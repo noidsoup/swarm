@@ -20,8 +20,13 @@ def load_prior_run_signals(repo_root: str, feature_request: str, context_pack: d
         "runner_timeouts": 0,
         "successful_runs": 0,
         "successful_files": [],
+        "lesson_confidence": {},
+        "trusted_positive_lessons": [],
+        "trusted_negative_lessons": [],
     }
     successful_files: set[str] = set()
+    lesson_confidence: dict[str, int] = {}
+    lesson_kinds: dict[str, str] = {}
 
     if not runs_dir.exists():
         return signals
@@ -54,7 +59,22 @@ def load_prior_run_signals(repo_root: str, feature_request: str, context_pack: d
                     if path:
                         successful_files.add(path)
 
+        for lesson in report.get("lessons", []):
+            key = str(lesson.get("key", "")).strip()
+            if not key:
+                continue
+            confidence = int(lesson.get("confidence", 1) or 1)
+            lesson_confidence[key] = lesson_confidence.get(key, 0) + confidence
+            lesson_kinds[key] = str(lesson.get("kind", "")).strip()
+
     signals["successful_files"] = sorted(successful_files)
+    signals["lesson_confidence"] = lesson_confidence
+    signals["trusted_positive_lessons"] = sorted(
+        key for key, count in lesson_confidence.items() if count >= 2 and lesson_kinds.get(key) == "positive"
+    )
+    signals["trusted_negative_lessons"] = sorted(
+        key for key, count in lesson_confidence.items() if count >= 2 and lesson_kinds.get(key) == "negative"
+    )
     return signals
 
 
@@ -71,6 +91,16 @@ def choose_adaptation_strategy(
     strict_validation = prior_signals.get("validation_failures", 0) >= 2
     if strict_validation:
         strategy_hints.append("Repeated validation failures detected; keep validation strict.")
+    trusted_negative_lessons = set(prior_signals.get("trusted_negative_lessons", []))
+    if any("missing_tests" in key or "validation" in key for key in trusted_negative_lessons):
+        strict_validation = True
+        if "tests" not in retrieval_biases:
+            retrieval_biases.append("tests")
+        strategy_hints.append("Trusted negative lessons indicate tests are commonly missed.")
+
+    trusted_positive_lessons = set(prior_signals.get("trusted_positive_lessons", []))
+    if trusted_positive_lessons:
+        strategy_hints.append("Trusted positive lessons are available from prior successful runs.")
 
     if request_tokens & {"fix", "regression", "test", "tests"}:
         retrieval_biases.append("tests")

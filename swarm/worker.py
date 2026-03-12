@@ -26,6 +26,7 @@ from swarm.context_pack import build_context_pack, summarize_context_pack
 from swarm.evals import (
     append_event,
     build_eval_report,
+    load_recent_eval_reports,
     make_event,
     read_events,
     summarize_eval_report,
@@ -121,6 +122,7 @@ def _is_ollama_runner_startup_timeout(exc: Exception) -> bool:
 def _write_lesson(task, report: dict) -> None:
     try:
         client = SimpleMemClient(load_simplemem_settings())
+        client.add_lessons(report.get("lessons", []))
         client.add_lesson(
             (
                 f"Swarm task finished with status={report.get('final_status')} "
@@ -159,6 +161,13 @@ def _execute_flow(task, cfg, context_pack_json: str, retrieval_pack_json: str):
     return flow
 
 
+def _call_execute_flow(task, cfg, context_pack_json: str, retrieval_pack_json: str):
+    try:
+        return _execute_flow(task, cfg, context_pack_json, retrieval_pack_json)
+    except TypeError:
+        return _execute_flow(task, cfg)
+
+
 def _retry_with_adaptation(
     *,
     task,
@@ -173,8 +182,16 @@ def _retry_with_adaptation(
     if not _is_ollama_runner_startup_timeout(error):
         raise error
 
-    retry_budget = min(max_retry_budget(adaptation_strategy), cfg.adaptation_max_retries)
-    fallback_model = adaptation_strategy.get("fallback_model", "")
+    retry_budget = min(
+        max_retry_budget(adaptation_strategy),
+        int(getattr(cfg, "adaptation_max_retries", 1)),
+    )
+    fallback_model = adaptation_strategy.get("fallback_model", "") or os.getenv(
+        "WORKER_FALLBACK_MODEL",
+        "ollama/gemma3:4b",
+    )
+    if retry_budget == 0 and fallback_model and fallback_model != cfg.worker_model:
+        retry_budget = 1
     if retries >= retry_budget or not fallback_model or fallback_model == cfg.worker_model:
         raise error
 
@@ -192,7 +209,7 @@ def _retry_with_adaptation(
         f"Ollama runner startup timed out on {cfg.worker_model}; retrying with fallback model {fallback_model}.",
     )
     cfg.worker_model = fallback_model
-    return _execute_flow(task, cfg, context_pack_json, retrieval_pack_json), retries + 1
+    return _call_execute_flow(task, cfg, context_pack_json, retrieval_pack_json), retries + 1
 
 
 def _run_swarm(task_id: str) -> None:
@@ -211,6 +228,7 @@ def _run_swarm(task_id: str) -> None:
 
     try:
         task_dir = _prepare_workspace(task_id, task.repo_url)
+        os.makedirs(task_dir, exist_ok=True)
 
         from swarm.config import cfg
         cfg.repo_root = task_dir
@@ -279,7 +297,7 @@ def _run_swarm(task_id: str) -> None:
             raise RuntimeError("Preflight validation failed")
 
         try:
-            flow = _execute_flow(task, cfg, context_pack_json, retrieval_pack_json)
+            flow = _call_execute_flow(task, cfg, context_pack_json, retrieval_pack_json)
         except Exception as first_error:
             flow, retries = _retry_with_adaptation(
                 task=task,
@@ -300,7 +318,7 @@ def _run_swarm(task_id: str) -> None:
         task.review_feedback = flow.state.review_feedback[:3000]
         task.quality_report = flow.state.quality_report[:5000]
         task.polish_report = flow.state.polish_report[:3000]
-        task.artifacts_dir = flow.state.run_artifacts_dir
+        task.artifacts_dir = getattr(flow.state, "run_artifacts_dir", task.artifacts_dir)
         append_event(
             artifact_paths["events"],
             make_event(task_id, "phase_completed", "pass", {"phase": "build"}),
@@ -311,7 +329,7 @@ def _run_swarm(task_id: str) -> None:
                 task_id,
                 "phase_completed",
                 "pass",
-                {"phase": "review", "review_iterations": flow.state.review_iteration},
+                {"phase": "review", "review_iterations": getattr(flow.state, "review_iteration", 0)},
             ),
         )
         if flow.state.quality_report:
@@ -358,9 +376,12 @@ def _run_swarm(task_id: str) -> None:
             events=read_events(artifact_paths["events"]),
             final_status="completed",
             validation_status=latest_validation_status,
-            review_iterations=flow.state.review_iteration,
+            review_iterations=getattr(flow.state, "review_iteration", 0),
             retries=retries,
             failure_kind=task.failure_kind,
+            builder=task.builder_type or "auto",
+            repo_profile=",".join(context_pack.get("stack", {}).get("frameworks", [])[:2]),
+            previous_reports=load_recent_eval_reports(task_dir, exclude_task_id=task_id),
         )
         with open(artifact_paths["eval"], "w", encoding="utf-8") as f:
             json.dump(eval_report, f, indent=2)
@@ -391,6 +412,9 @@ def _run_swarm(task_id: str) -> None:
                 review_iterations=0,
                 retries=retries,
                 failure_kind=task.failure_kind,
+                builder=task.builder_type or "auto",
+                repo_profile=",".join(context_pack.get("stack", {}).get("frameworks", [])[:2]),
+                previous_reports=load_recent_eval_reports(task_dir, exclude_task_id=task_id),
             )
             with open(artifact_paths["eval"], "w", encoding="utf-8") as f:
                 json.dump(eval_report, f, indent=2)
