@@ -1,111 +1,210 @@
 # AI Dev Swarm
 
-A 10-agent coding swarm powered by [CrewAI](https://github.com/crewaiinc/crewAI) and free local [Ollama](https://ollama.com) models. **Cursor AI acts as the commander** (architect + judge), while the swarm handles the grunt work for $0.
+`swarm` is an AI coding orchestrator. Cursor acts as the commander, and this repo runs a deterministic worker pipeline to implement, review, and harden code changes.
 
-## Architecture
+## What This Project Is
 
-```
-You (in Cursor) --> Cursor AI plans the work
-                        |
-                        v
-                  MCP: run_swarm(plan)
-                        |
-                        v
-              +--------------------+
-              | Worker SwarmFlow   |
-              |                    |
-              | 1. BUILD           |
-              | 2. REVIEW (x3)    |
-              | 3. SECURITY        |
-              | 4. PERFORMANCE     |
-              | 5. TESTS           |
-              | 6. LINT            |
-              | 7. REFACTOR        |
-              | 8. DOCS            |
-              +--------------------+
-                        |
-                        v
-              Cursor AI judges output
-              Approves or sends back
+- **Commander model:** Cursor plans work and judges outcomes.
+- **Worker runtime:** This repo executes BUILD -> REVIEW LOOP -> QUALITY -> POLISH.
+- **Execution backends:** `local`, `ollama` (remote API worker), and `cursor` (SSH inbox/outbox worker).
+- **Primary use case:** run coding tasks end-to-end with repeatable phases, artifacts, and status polling.
+
+## Current Architecture
+
+```text
+Cursor (commander)
+  -> MCP tool: run_swarm(plan, ...)
+  -> Dispatcher chooses execution_mode
+       local   -> WorkerSwarmFlow in-process
+       ollama  -> POST /tasks to remote swarm API + poll
+       cursor  -> SSH inbox/outbox transport to remote cursor worker
+  -> Returns structured result + artifacts path
 ```
 
-## The 10 Worker Agents
+Worker flow (`WorkerSwarmFlow`) is:
 
-| Agent | Role | What It Does |
-|-------|------|-------------|
-| React Dev | React / Next.js Engineer | Writes React, Next.js, TypeScript, Tailwind |
-| WordPress Dev | WordPress Engineer | Writes PHP, plugins, REST API integrations |
-| Shopify Dev | Shopify Engineer | Writes Liquid, Theme Kit, Storefront API |
-| Reviewer | Code Reviewer | Critiques code, finds bugs and anti-patterns |
-| Security | Security Auditor | Finds OWASP Top 10 vulnerabilities |
-| Performance | Performance Engineer | Optimizes Core Web Vitals, bundle size |
-| Tester | Test Engineer | Writes Jest, Playwright, pytest tests |
-| Refactorer | Refactor Engineer | Cleans code without changing behavior |
-| Docs | Documentation Writer | Writes README, docstrings, migration notes |
-| Linter | Lint Specialist | Runs and fixes linter errors |
+```text
+BUILD -> REVIEW (loop with FIX) -> QUALITY GATES -> POLISH -> COMPLETE
+```
 
-All agents run on **free Ollama models** locally. Cursor AI (which you already pay for) handles the smart planning and judgment.
+Standalone CLI flow (`FullSwarmFlow`) adds planning and optional shipping:
 
-## Setup
+```text
+PLAN -> BUILD -> REVIEW LOOP -> QUALITY -> POLISH -> SHIP (only if AUTO_COMMIT=true)
+```
 
-### 1. Install dependencies
+## Worker Agent Roster (11)
+
+Builders:
+
+- `python_dev`
+- `react_dev`
+- `wordpress_dev`
+- `shopify_dev`
+
+Review / quality / polish:
+
+- `reviewer`
+- `security`
+- `performance`
+- `tester`
+- `linter_agent`
+- `refactorer`
+- `docs`
+
+Builder selection is automatic from request/plan keywords unless overridden with `builder_type` or `--builder`.
+
+## Key Features
+
+- **Deterministic phase pipeline:** shared flow methods in `swarm/flow.py`.
+- **Review loop routing:** loops until `APPROVED` or `max_review_loops`.
+- **Context + retrieval packs:** built before execution and persisted to artifacts.
+- **Validation gates:** preflight and postflight checks in worker mode.
+- **Adaptive retries:** fallback model retry for Ollama runner startup timeouts.
+- **Multi-backend dispatch:** local runtime, remote API queue worker, or cursor transport worker.
+- **Task persistence:** Redis queue when available with in-memory fallback.
+- **Per-run artifacts:** canonical run directory under `.swarm/runs/<task_id>/`.
+- **Project registry + templates:** register projects and scaffold from templates via MCP.
+
+## Entry Points
+
+- `run.py` - local CLI for standalone or headless runs.
+- `swarm/mcp_server.py` - MCP surface for Cursor.
+- `swarm/api.py` - remote FastAPI task gateway.
+- `swarm/worker.py` - background queue worker.
+- `daemon.py` and `swarm/daemon_cli.py` - continuous improvement daemon.
+
+## Installation
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Install Ollama and pull a model
+Optional editable install:
 
 ```bash
-winget install Ollama.Ollama
-ollama pull qwen2.5-coder
+pip install -e .
 ```
 
-### 3. Configure
+## Configuration
 
-```bash
-cp .env.example .env
-```
+Core environment variables:
 
-Default config uses `ollama/qwen2.5-coder` for all workers. No API keys needed.
+- `WORKER_MODEL` (default `ollama/qwen2.5-coder:7b`)
+- `OLLAMA_BASE_URL` (default `http://127.0.0.1:11434` on Windows, `http://localhost:11434` otherwise)
+- `AUTO_COMMIT` (default `false`)
+- `BRANCH_PREFIX` (default `swarm/`)
+- `DEFAULT_EXECUTION_MODE` (`local`, `ollama`, `cursor`)
+- `WINDOWS_HOST`, `WINDOWS_USER`, `WINDOWS_SSH_KEY`, `WINDOWS_SWARM_API`, `WINDOWS_CURSOR_WORKSPACE`
 
-### 4. Init git (for auto-commit features)
-
-```bash
-git init
-```
+Per-role model overrides are supported (`PLANNER_MODEL`, `REVIEWER_MODEL`, `BUILDER_MODEL`, etc.).
 
 ## Usage
 
-### Via Cursor (recommended -- MCP integration)
-
-1. Enable the **swarm** MCP server in Cursor (Settings → MCP → add config for this repo’s `swarm` server).
-2. In chat, describe the feature; Cursor (commander) will plan and call `run_swarm(plan, feature_name, ...)`.
-3. Review the swarm’s build summary, review feedback, and quality report, then approve or send back.
-
-### CLI (standalone)
+### 1) Local standalone (swarm plans + executes)
 
 ```bash
-# Standalone: swarm plans and executes
-python run.py "Add product filtering to the Next.js collection page"
-
-# Headless: you supply the plan (e.g. from Cursor)
-python run.py --plan plan.md "Add product filtering"
-python run.py --plan - "Fix login" < plan.txt
-
-# Options
-python run.py --no-commit "Refactor the auth module"
-python run.py --dry-run "Add dark mode toggle"
-python run.py --builder react_dev "Add a React component"
+python run.py "Add request tracing to API handlers"
 ```
 
-## Troubleshooting
+### 2) Headless (you provide the plan)
 
-- **Imports or dependencies fail:** Run `pip install -r requirements.txt` and ensure you’re in the repo root with the correct Python env.
-- **Windows `charmap` codec errors:** The CLI forces UTF-8 for stdout/stderr on Windows. If you still see encoding errors (e.g. from subprocesses), run with `$env:PYTHONIOENCODING="utf-8"; python run.py ...` (PowerShell) or set `PYTHONIOENCODING=utf-8` in your environment.
+```bash
+python run.py --plan plan.md "Add request tracing to API handlers"
+python run.py --plan - "Fix flaky test retries" < plan.txt
+```
 
-## Test Plan
+### 3) Run selected phases
 
-- `pip install -r requirements.txt` succeeds
-- `python run.py --help` shows usage
-- `python run.py "Add a hello world React component"` runs the full pipeline (requires Ollama or API key)
+```bash
+python run.py --only build,review --plan plan.md "Feature task"
+python run.py --skip polish "Feature task"
+```
+
+### 4) MCP (recommended with Cursor)
+
+Configure Cursor MCP to run:
+
+- command: `python`
+- args: `["/absolute/path/to/swarm/swarm/mcp_server.py"]`
+
+Then call:
+
+- `run_swarm(...)`
+- `swarm_status(task_id)`
+- `list_agents()`
+- project tools (`list_projects`, `add_project`, `run_project_task`, `spawn_project`)
+
+### 5) Remote API mode (`execution_mode=ollama`)
+
+Run API + worker on remote host (or Docker), then dispatch and poll.
+
+### 6) Cursor worker mode (`execution_mode=cursor`)
+
+Use SSH inbox/outbox transport with `CursorWorkerClient` and `CursorWorkerService`.
+
+## API Surface (Remote Gateway)
+
+From `swarm/api.py`:
+
+- `POST /tasks`
+- `GET /tasks`
+- `GET /tasks/{task_id}`
+- `GET /tasks/{task_id}/log` (SSE)
+- `DELETE /tasks/{task_id}`
+- `GET /health`
+- `GET /models`
+- `GET /gpu`
+
+## Artifacts and Observability
+
+Each run writes under:
+
+```text
+<repo>/.swarm/runs/<task_id>/
+```
+
+Canonical files:
+
+- `context.json`
+- `retrieval.json`
+- `validation.json`
+- `eval.json`
+- `events.jsonl`
+- `build_phase.log`
+
+Task records also include summaries (`context_summary`, `retrieval_summary`, `validation_summary`, `eval_summary`, `adaptation_summary`) and comparison/lessons fields.
+
+## Safety Model
+
+- File tools enforce repo-root path containment.
+- Artifact paths validate task IDs and prevent traversal.
+- Git helper uses arg-list subprocess calls (`shell=False`).
+- Worker blocks private/local `repo_url` targets for remote clones.
+- `WriteFile` blocks destructive no-overlap rewrites by default unless explicitly overridden via `SWARM_ALLOW_NO_OVERLAP_REWRITE=true`.
+
+## Testing and Verification
+
+Run full checks:
+
+```bash
+ruff check swarm tests run.py daemon.py setup.py simplemem_client.py simplemem_cli.py
+pytest
+```
+
+High-value test areas:
+
+- flow/review loop behavior
+- dispatch mode routing
+- task-store fallback semantics
+- run artifact path safety
+- tool safety contracts
+- worker retry and adaptation behavior
+
+## Documentation Map
+
+- `AGENTS.md` - always-on agent instructions and operational truths.
+- `AI_RUNBOOK.md` - operator handbook and troubleshooting.
+- `AI_FEATURE_MAP.md` - module-by-module capability index for AI agents.
+- `COMMANDER_LOOP.md` - detailed review-loop and phase routing behavior.
+- `USING_IN_OTHER_REPOS.md` - multi-repo integration patterns.

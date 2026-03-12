@@ -1,169 +1,104 @@
-# The Commander Loop (Self-Improving Code)
+# Commander Loop
 
-Your swarm has a **feedback loop** that keeps improving code until it passes all checks.
+How the swarm review loop actually behaves today.
 
-## How It Works
+## Overview
 
-```
-          ┌─────────────┐
-          │   BUILDER   │
-          │  writes code│
-          └──────┬──────┘
-                 │
-                 ▼
-          ┌─────────────┐
-          │  REVIEWER   │
-          │ critiques   │
-          └──────┬──────┘
-                 │
-          ┌──────┴──────┐
-          │             │
-       APPROVED?      NO (issues found)
-          │             │
-         YES            ▼
-          │        ┌─────────────┐
-          │        │  FIX PHASE  │
-          │        │ builder     │
-          │        │ fixes issues│
-          │        └──────┬──────┘
-          │               │
-          │        ┌──────▼──────┐
-          │        │ RE-REVIEW   │
-          │        │ goes back up│
-          │        └──────┬──────┘
-          │               │
-          │        (loop back or APPROVED)
-          │               │
-          └───────┬───────┘
-                  │
-                  ▼
-          ┌─────────────────┐
-          │  QUALITY GATES  │
-          │  Security       │
-          │  Performance    │
-          │  Tests          │
-          │  Lint           │
-          └─────────────────┘
+The commander loop is the BUILD + REVIEW/FIX cycle that runs before quality and polish.
+
+```text
+BUILD
+  -> REVIEW
+      -> APPROVED? yes -> QUALITY
+      -> no -> FIX -> REVIEW (repeat)
 ```
 
-## The Loop is Already Implemented
+## Where It Lives
 
-In `swarm/flow.py`:
+- Shared phase implementations: `swarm/flow.py` (`BaseSwarmFlow`)
+- Worker orchestration graph: `WorkerSwarmFlow` in `swarm/flow.py`
+- Standalone orchestration graph: `FullSwarmFlow` in `swarm/flow.py`
 
-- **`review_phase()`** (line 98): Reviewer critiques the code
-- **`review_router()`** (line 111): Decision point — "APPROVED" or "needs_fix"?
-- **`fix_phase()`** (line 120): Builder fixes issues
-- **`re_review()`** (line 130): Loops back to review
-- **Max iterations**: 3 (configurable in `swarm/config.py`)
+## Routing Rules
 
-## Example: Commander Loop in Action
+Review routing logic:
 
-**Command:**
-```bash
-python run.py "Add product filtering to homepage"
-```
+- If review feedback contains `APPROVED` (case-insensitive), route to approved.
+- Else if review iteration reached `cfg.max_review_loops`, force approved route.
+- Else route to `needs_fix`.
 
-**What happens:**
+This means a task always exits the loop, either through explicit approval or max-loop cutoff.
 
-```
-PLAN          → Architect breaks task into steps
-BUILD         → Builder writes React component
-REVIEW #1     → Reviewer: "Missing memoization, uses wrong hook"
-FIX #1        → Builder adds useMemo, fixes hook
-REVIEW #2     → Reviewer: "Good! But missing PropTypes"
-FIX #2        → Builder adds PropTypes validation
-REVIEW #3     → Reviewer: "APPROVED ✓"
-QUALITY GATES → Security ✓, Perf ✓, Tests ✓, Lint ✓
-POLISH        → Refactor + Docs
-SHIPPED       → Code committed
-```
+## Worker Phase Sequence
 
-## How to Trigger the Loop
+`WorkerSwarmFlow` wiring:
 
-### CLI (Standalone)
-```bash
-python run.py "Add filtering to product page"
-```
-Runs full loop: PLAN → BUILD → REVIEW LOOP → QUALITY → POLISH → SHIP
+1. `build_phase`
+2. `review_phase`
+3. `review_router`
+4. if `needs_fix`: `fix_phase` -> `re_review` -> `re_review_router` (loop)
+5. if `approved`: `quality_phase`
+6. `polish_phase`
+7. `finish_phase` (returns structured result JSON)
 
-### Via Cursor (Headless - Recommended)
-```
-You (in Cursor): "Add filtering to product page"
-      ↓
-Cursor plans: Creates detailed implementation plan
-      ↓
-Cursor calls: run_swarm(plan, feature_name)
-      ↓
-Swarm: BUILD → REVIEW LOOP → QUALITY → POLISH
-      ↓
-Returns: build_summary, review_feedback, quality_report
-      ↓
-You judge: Approve or send back for changes
-```
+## Quality and Polish Behavior
 
-## Configure Loop Behavior
+- Quality runs with four tasks: security, performance, tests, lint.
+- Polish runs with two tasks: refactor, docs.
+- Both use `quality_crew(..., process=Process.sequential)` in current code.
 
-In `swarm/config.py`:
+So quality/polish are deterministic and sequential, not parallel.
 
-```python
-max_review_loops = 3  # Default: try up to 3 times
-auto_commit = True    # Default: commit when done
-verbose = True        # Default: show agent output
-```
+## Standalone Differences
 
-## The "Never Sleeps" Option (Bonus)
+`FullSwarmFlow` adds:
 
-The daemon files I just added (`daemon.py`, `background_loop.py`) extend this to continuous:
+- `planning_phase` at start.
+- `ship_phase` at end.
 
-```bash
-python daemon.py /path/to/repo
-```
+`ship_phase` behavior:
 
-Runs continuously:
-- Watches for file changes
-- Queues files for improvement
-- Triggers loop on each file
-- Opens PRs automatically
+- If `AUTO_COMMIT=false` (default), run ends as complete with no commit.
+- If `AUTO_COMMIT=true`, creates branch + commit via git helper.
 
-This becomes **always-on AI CI**: every code change is reviewed, tested, and improved by the swarm.
+## Builder Selection in Loop
 
-## Real Example Output
+Before build starts, builder is selected by:
 
-```
-============================================================
-  PHASE: REVIEW (iteration 1/3)
-============================================================
+1. Explicit `builder_type` if provided.
+2. Keyword-based auto-routing (`_pick_builder`) by request/plan:
+   - WordPress/PHP -> `wordpress_dev`
+   - Shopify/Liquid/theme -> `shopify_dev`
+   - React/Next/frontend keywords -> `react_dev`
+   - Fallback -> `python_dev`
 
-[REVIEW RESULT]
-Issues found:
-- useEffect missing dependency array (line 42)
-- Re-render on every keystroke (performance issue)
-- No PropTypes validation
+## Loop Inputs and Outputs
 
-============================================================
-  PHASE: FIX (iteration 1)
-============================================================
+Loop inputs:
 
-[BUILD RESULT]
-Fixed:
-✓ Added dependency array
-✓ Wrapped in useMemo
-✓ Added PropTypes
+- plan text
+- optional context pack JSON
+- optional retrieval pack JSON
 
-============================================================
-  PHASE: REVIEW (iteration 2/3)
-============================================================
+Loop outputs:
 
-[REVIEW RESULT]
-Excellent! Code looks good.
-APPROVED ✓
-```
+- `build_summary`
+- `review_feedback`
+- `quality_report`
+- `polish_report`
+- `review_iteration` count
 
-## What's Next
+These are returned by worker flow and persisted in task records/artifacts.
 
-1. **Use it from Cursor** — enable swarm MCP and ask for features
-2. **Let it loop** — let the agents argue and improve code automatically
-3. **Optional: Run daemon** — continuous background improvement
-4. **Watch it work** — agent-to-agent communication happens until all checks pass
+## Operational Notes
 
-The loop never gives up until code is good. 🤖
+- `max_review_loops` defaults to 3.
+- Worker execution always sets `auto_commit` off.
+- Build phase traces are appended to `build_phase.log` in run artifacts.
+- In worker runtime, the loop is surrounded by adaptation/retrieval/validation/eval stages.
+
+## Practical Guidance
+
+- Use `--max-reviews` for CLI control of loop depth.
+- Use `--only build,review` for focused loop debugging.
+- Inspect `events.jsonl` and `build_phase.log` first when loop behavior looks wrong.

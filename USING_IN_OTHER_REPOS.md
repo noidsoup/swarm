@@ -1,163 +1,107 @@
-# Using Swarm in Other Repos
+# Using Swarm in Other Repositories
 
-The AI Dev Swarm is designed to be portable — you can run it against any repository.
+This project is designed to orchestrate work against arbitrary target repos.
 
-## Option 1: CLI with `--repo` flag (recommended for quick use)
+## Integration Options
 
-From the swarm repo:
+## 1) CLI with `--repo` (fastest path)
 
-```bash
-python run.py --repo /path/to/my-nextjs-app "Add dark mode toggle"
-python run.py --repo ../my-wordpress-plugin "Add REST endpoint for products"
-```
-
-The swarm will:
-- Read your repo files
-- Run agents
-- Make changes
-- Commit (or `--no-commit` to preview)
-
-## Option 2: Install as a package (recommended for regular use)
-
-### Install from GitHub
+From this repo:
 
 ```bash
-pip install git+https://github.com/noidsoup/swarm.git
+python run.py --repo /path/to/target-repo "Implement feature X"
+python run.py --repo /path/to/target-repo --builder react_dev "Implement feature X"
+python run.py --repo /path/to/target-repo --no-commit "Implement feature X"
 ```
 
-Then in **any** repo:
+Notes:
+
+- `--repo` sets `cfg.repo_root` for this run.
+- Auto-commit is **disabled by default** (`AUTO_COMMIT=false`), even without `--no-commit`.
+- Use `--plan` for headless mode if you already have a plan.
+
+## 2) Install as a package
 
 ```bash
-swarm-run "Add filtering to products page"
-swarm-run --repo /path/to/other/repo "Optimize images"
-swarm-daemon /path/to/repo  # Continuous improvement
+pip install -e /path/to/swarm
 ```
 
-### Local development install
+Then from any location:
 
 ```bash
-cd /path/to/swarm
-pip install -e .
+swarm-run --repo /path/to/target-repo "Implement feature X"
+swarm-daemon /path/to/target-repo
 ```
 
-Then use `swarm-run` anywhere.
+## 3) MCP from Cursor
 
-## Option 3: Point MCP at swarm (for Cursor)
+Configure MCP server to point at this repo's `swarm/mcp_server.py`, then call:
 
-In Cursor settings, MCP config points to the swarm repo:
-
-```json
-{
-  "mcpServers": {
-    "swarm": {
-      "command": "python",
-      "args": ["/path/to/swarm/swarm/mcp_server.py"]
-    }
-  }
-}
+```text
+run_swarm(plan, repo_path="/path/to/target-repo", execution_mode="local")
 ```
 
-Then from any Cursor chat, call `run_swarm(plan, repo_path="/path/to/other/repo")`.
+You can also use:
 
-## Option 4: Copy/symlink swarm into your project
+- `add_project(...)`
+- `run_project_task(...)`
+- `spawn_project(...)`
+
+to avoid passing repo metadata each time.
+
+## 4) Remote API / worker mode
+
+If target execution should happen on another machine:
+
+- Run API + worker remotely.
+- Dispatch with `execution_mode="ollama"` and optional `repo_url`.
+- Poll until completion via API or MCP status tool.
+
+## 5) Cursor transport worker mode
+
+For SSH inbox/outbox dispatch to remote machine:
+
+- Configure `WINDOWS_HOST` and `WINDOWS_USER`.
+- Optionally set `WINDOWS_SSH_KEY`.
+- Use `execution_mode="cursor"`.
+
+## Suggested Workflows
+
+### A) Local repo with explicit plan
 
 ```bash
-# Copy the swarm
-cp -r /path/to/swarm /path/to/my-project/.ai-swarm
-
-# Or symlink
-ln -s /path/to/swarm /path/to/my-project/.ai-swarm
-
-# Then run
-cd /path/to/my-project
-python .ai-swarm/run.py "Add feature"
+python run.py --repo /path/to/repo --plan plan.md "Feature name"
 ```
 
-## Example Workflows
+### B) Cursor commander + project registry
 
-### Improving an existing React app
+1. `add_project(name, repo_path, builder_type, execution_mode)`
+2. `run_project_task(project_name, plan, feature_name)`
+3. `swarm_status(task_id)` until terminal status.
 
-```bash
-python run.py --repo ~/projects/my-react-app "Optimize Core Web Vitals"
-```
+### C) Smoke-check remote path
 
-The swarm will:
-- Analyze the React codebase
-- Run lighthouse checks
-- Optimize images, lazy load, etc.
-- Suggest performance improvements
-- Create a commit
+Use a "smoke test" feature/plan phrase to trigger smoke profile in local dispatch logic and validate transport quickly.
 
-### Adding a feature to a WordPress plugin
+## Repo-Specific Configuration
 
-```bash
-python run.py --repo ~/projects/my-plugin --builder wordpress_dev "Add REST endpoint for filtering products"
-```
+Swarm reads environment via standard dotenv loading (`.env`) and process environment variables.
 
-### Continuous improvement on a Next.js project
+Recommended pattern per target environment:
 
-```bash
-python daemon.py ~/projects/my-nextjs-app
-```
+- keep environment values in shell profile or `.env`
+- set `WORKER_MODEL`, `DEFAULT_EXECUTION_MODE`, and remote variables as needed
+- avoid committing credentials
 
-The daemon will:
-- Watch for file changes
-- Automatically review new code
-- Run quality gates
-- Open PRs for improvements
-- Run 24/7
+## Constraints and Guardrails
 
-## Configuration Per Repo
+- File operations are repo-root sandboxed.
+- Remote worker clone URLs are validated; local/private clone targets are blocked.
+- Unknown execution modes are rejected.
 
-Each repo can have its own `.env.swarm`:
+## Troubleshooting
 
-```
-WORKER_MODEL=ollama/qwen2.5-coder
-MAX_REVIEWS=3
-AUTO_COMMIT=true
-BRANCH_PREFIX=ai/
-```
-
-The swarm will read this if it exists in the target repo root.
-
-## Combining with Your Cursor Workflow
-
-**Recommended setup:**
-
-1. **Install swarm globally:**
-   ```bash
-   pip install -e /path/to/swarm
-   ```
-
-2. **Enable MCP in Cursor** to point at swarm
-
-3. **From Cursor chat in any repo:**
-   ```
-   "Add dark mode to the settings page"
-   ```
-   Cursor calls → swarm MCP → `run_swarm(plan, repo_path=<current-repo>)`
-
-4. **Or use CLI:**
-   ```bash
-   swarm-run --repo . "Add feature"
-   ```
-
-## Tips
-
-- **`--no-commit`** to preview changes before committing
-- **`--dry-run`** to see config without running
-- **`--max-reviews N`** to limit review iterations
-- **`--builder react_dev|wordpress_dev|shopify_dev`** to force a builder
-- **`--quiet`** to reduce output noise
-
-## Multi-Repo Example
-
-```bash
-# Improve all your projects at once
-for repo in ~/projects/*; do
-  echo "Improving $repo..."
-  python run.py --repo "$repo" "Refactor and optimize"
-done
-```
-
-The swarm becomes your AI development team across all repositories.
+- **Changes landed in wrong repo:** verify `--repo` or `repo_path`.
+- **Task never finishes:** poll status and inspect `.swarm/runs/<task_id>/events.jsonl`.
+- **Unexpected no-commit behavior:** this is default unless `AUTO_COMMIT=true`.
+- **Remote clone denied:** use supported public/allowed `repo_url`.

@@ -30,6 +30,14 @@ The goal is to run complex AI tasks from the Mac and have the heavy work happen 
 - `swarm/worker.py`: background task worker
 - `daemon.py` and `swarm/daemon_cli.py`: continuous improvement daemon entry points
 
+## Documentation Canonicals
+
+- `README.md`: product-level overview and current capabilities
+- `AI_RUNBOOK.md`: operator workflows, execution modes, and troubleshooting
+- `AI_FEATURE_MAP.md`: module-by-module feature index and test-locked invariants
+- `COMMANDER_LOOP.md`: review/fix loop behavior and phase routing
+- `USING_IN_OTHER_REPOS.md`: integration patterns for multi-repo usage
+
 ## Builder Routing
 
 - Default builder for generic work is `python_dev`
