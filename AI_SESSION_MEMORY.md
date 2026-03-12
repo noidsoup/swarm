@@ -483,3 +483,19 @@ Replace IP/username/key path if different. Expect `"status": "complete"` and a r
 **Interpretation**
 - Mac->Windows cursor-mode offload is now proven for real execution (not just immediate smoke responses).
 - Current primary concern is performance/latency tuning, not basic transport reliability.
+
+---
+
+## 2026-03-12 — Steps in memory / continue
+
+**Branch:** main
+
+**Current state**
+- Cursor mode works: Mac dispatches, Windows worker runs (600s timeout), real run completed (`swarm-bea0f2a28206`).
+- Runbook has "Get cursor mode working"; Windows defaults to 127.0.0.1 for Ollama; `simplemem_cli.py next-steps` reads memory.
+
+**Next steps (in memory for continuation)**
+- [ ] **Use cursor mode again:** On Windows `.\scripts\cursor-worker.ps1 start` (real) or `start -Fast` (skip LLM). On Mac: set `WINDOWS_HOST`, `WINDOWS_USER`, `WINDOWS_SSH_KEY`, then `python3 scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/nicho/AppData/Local/Temp/smoke-repo"`.
+- [ ] **Optional — experimental follow-ups:** lesson decay/resurrection, known failure playbook, per-repo scar tissue map, strategy mutation sandbox (start from `swarm/evals.py`, `swarm/adaptation.py`, then `swarm/worker.py`).
+- [ ] **Optional — plan items:** smoke prompt normalizer (already in dispatch), cursor worker tests, full local `dispatch --mode cursor` validation.
+- [ ] Run `python simplemem_cli.py next-steps` anytime to resurface these steps.
