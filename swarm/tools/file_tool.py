@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Type
 
@@ -19,6 +20,14 @@ def _resolve_repo_path(path: str) -> Path:
     except ValueError:
         raise ValueError(f"Path escapes repo root: {path}")
     return full
+
+
+def _has_line_overlap(existing: str, incoming: str) -> bool:
+    existing_lines = {line.rstrip() for line in existing.splitlines() if line.strip()}
+    incoming_lines = {line.rstrip() for line in incoming.splitlines() if line.strip()}
+    if not existing_lines or not incoming_lines:
+        return True
+    return bool(existing_lines.intersection(incoming_lines))
 
 
 class FileReadInput(BaseModel):
@@ -62,6 +71,14 @@ class FileWriteTool(BaseTool):
         except ValueError as e:
             return f"[ERROR] {e}"
         try:
+            if full.exists() and full.is_file():
+                existing = full.read_text(encoding="utf-8", errors="replace")
+                allow_no_overlap = os.getenv("SWARM_ALLOW_NO_OVERLAP_REWRITE", "").lower() == "true"
+                if not allow_no_overlap and not _has_line_overlap(existing, content):
+                    return (
+                        "[ERROR] WriteFile blocked a no-overlap overwrite for an existing file. "
+                        "Preserve at least one unchanged line or set SWARM_ALLOW_NO_OVERLAP_REWRITE=true."
+                    )
             full.parent.mkdir(parents=True, exist_ok=True)
             full.write_text(content, encoding="utf-8")
             return f"Wrote {len(content)} chars to {path}"
