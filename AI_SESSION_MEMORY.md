@@ -87,3 +87,42 @@ Session summaries and state for the AI Dev Swarm project.
 - Add optional Claude/GPT-4 for judge phase (currently uses local model)
 - Performance: profile and optimize agent LLM calls
 - UI: web dashboard for daemon status and logs
+
+---
+
+## 2026-03-12 — Mac-to-Windows remote execution, bug fixes, and docs hardening
+
+**Branch:** main
+
+**Completed**
+- Merged `feat/remote-docker-infra` into `main` (Docker, FastAPI, worker, monitoring, SSH scripts, remote CLI)
+- Set up Mac→Windows SSH tunnel: created `~/.ssh/id_ed25519_nopass`, configured `winbox` alias in `~/.ssh/config` with port forwarding (9000, 11434, 3000)
+- Started Ollama, Swarm API (`uvicorn swarm.api:app`), and worker (`swarm.worker`) on Windows (`192.168.87.126`) via SSH
+- Submitted and monitored remote tasks from Mac using `scripts/swarm_remote.py`
+- Fixed `scripts/swarm_remote.py`: moved `global SWARM_URL` before first use (was a SyntaxError)
+- Fixed CrewAI async-task validation crash: `quality_crew()` no longer forces all tasks to `async_execution=True` (`swarm/crews.py`)
+- Renamed `TestTool`/`TestInput` to `RunTestsTool`/`RunTestsInput` to prevent pytest mis-collection
+- Added `tests/test_smoke.py`, `tests/test_crews.py`, `tests/test_worker.py`
+- Fixed `scripts/setup-autostart.ps1` path bug (`Split-Path` double-parent); re-registered Windows scheduled task `SwarmDockerComposeUp` with correct repo path
+- Added Ollama runner fallback in `swarm/worker.py`: detects "timed out waiting for llama runner to start" and retries with `WORKER_FALLBACK_MODEL` (default `ollama/gemma3:4b`)
+- Updated `AGENTS.md` with "Operational Truths" section: Mac orchestrator, optional Windows Ollama, 11 agents, sequential quality crews, async MCP semantics
+- Hardened `.gitignore` against accidental SSH key/config commits
+
+**Key decisions**
+- Use `id_ed25519_nopass` (no passphrase) for non-interactive SSH from Cursor agent sessions
+- Run combined API+worker in one Python process (shared in-memory task store) instead of Docker when Docker Desktop is unavailable
+- Default `WORKER_MODEL=ollama/qwen2.5-coder:7b` with `WORKER_FALLBACK_MODEL=ollama/gemma3:4b` for runner startup resilience
+- Quality/polish crews run sequentially (not async) to comply with current CrewAI validation rules
+
+**Known issues / notes**
+- `qwen2.5-coder:7b` intermittently fails Ollama runner startup on Windows (GPU cold-start); fallback to `gemma3:4b` auto-recovers
+- CrewAI emoji logging still triggers charmap warnings on Windows console (non-blocking)
+- Docker Desktop on Windows requires manual start or login-trigger via scheduled task; `docker compose up -d` only works after engine is ready
+- `ruff` is not installed in the Mac Python environment; linting skipped locally
+
+**Next steps**
+- Create `.env` in repo root with `OLLAMA_BASE_URL` pointing to Windows IP for persistent config
+- Add startup script for non-Docker mode (uvicorn+worker) as a Windows scheduled task
+- Investigate `qwen2.5-coder:7b` cold-start timeout root cause on RTX 4070
+- Test full pipeline completion end-to-end (build → review → quality → polish → complete)
+- Add CI workflow for pytest + ruff
