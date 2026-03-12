@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -51,6 +51,8 @@ class TaskResult(BaseModel):
     failure_kind: str = ""
     error: str = ""
     log: list[str] = Field(default_factory=list)
+    lessons: list[dict[str, Any]] = Field(default_factory=list, description="Extracted lessons from eval report")
+    comparison: dict[str, Any] = Field(default_factory=dict, description="Comparison vs recent runs")
 
 
 def new_task_id() -> str:

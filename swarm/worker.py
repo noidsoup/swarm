@@ -386,6 +386,8 @@ def _run_swarm(task_id: str) -> None:
         with open(artifact_paths["eval"], "w", encoding="utf-8") as f:
             json.dump(eval_report, f, indent=2)
         task.eval_summary = summarize_eval_report(eval_report)
+        task.lessons = eval_report.get("lessons", [])
+        task.comparison = eval_report.get("comparison", {})
         flow.state.eval_report_json = json.dumps(eval_report)
         store.update(task)
         _write_lesson(task, eval_report)
@@ -419,6 +421,8 @@ def _run_swarm(task_id: str) -> None:
             with open(artifact_paths["eval"], "w", encoding="utf-8") as f:
                 json.dump(eval_report, f, indent=2)
             task.eval_summary = summarize_eval_report(eval_report)
+            task.lessons = eval_report.get("lessons", [])
+            task.comparison = eval_report.get("comparison", {})
             _write_lesson(task, eval_report)
         store.update(task)
         _log(task_id, f"Swarm failed: {e}")

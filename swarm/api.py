@@ -55,6 +55,8 @@ def _task_response(task) -> dict:
         "artifacts_dir",
     ):
         payload.setdefault(key, "")
+    payload.setdefault("lessons", [])
+    payload.setdefault("comparison", {})
     return payload
 
 

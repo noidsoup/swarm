@@ -18,6 +18,8 @@ def test_api_task_responses_include_learning_summaries(monkeypatch) -> None:
     task.eval_summary = "Eval summary"
     task.adaptation_summary = "Adaptation summary"
     task.artifacts_dir = "/tmp/.swarm/runs/swarm-demo"
+    task.lessons = [{"lesson": "prefer pytest for Python tests", "confidence": 2}]
+    task.comparison = {"retries_vs_baseline": 0, "improved": True}
     store.update(task)
     monkeypatch.setattr("swarm.api.store", store)
 
@@ -38,6 +40,8 @@ def test_api_task_responses_include_learning_summaries(monkeypatch) -> None:
     assert list_payload[0]["eval_summary"] == "Eval summary"
     assert list_payload[0]["adaptation_summary"] == "Adaptation summary"
     assert list_payload[0]["artifacts_dir"] == "/tmp/.swarm/runs/swarm-demo"
+    assert list_payload[0]["lessons"] == [{"lesson": "prefer pytest for Python tests", "confidence": 2}]
+    assert list_payload[0]["comparison"] == {"retries_vs_baseline": 0, "improved": True}
 
     assert detail_payload["context_summary"] == "Context summary"
     assert detail_payload["retrieval_summary"] == "Retrieval summary"
@@ -45,6 +49,8 @@ def test_api_task_responses_include_learning_summaries(monkeypatch) -> None:
     assert detail_payload["eval_summary"] == "Eval summary"
     assert detail_payload["adaptation_summary"] == "Adaptation summary"
     assert detail_payload["artifacts_dir"] == "/tmp/.swarm/runs/swarm-demo"
+    assert detail_payload["lessons"] == [{"lesson": "prefer pytest for Python tests", "confidence": 2}]
+    assert detail_payload["comparison"] == {"retries_vs_baseline": 0, "improved": True}
 
 
 def test_mcp_swarm_status_exposes_learning_summaries(monkeypatch) -> None:
