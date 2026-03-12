@@ -15,21 +15,27 @@ Or with systemd/supervisor for always-on CI.
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
 if __name__ == "__main__":
+    from swarm.logging_utils import configure_logging
+
+    configure_logging()
+    logger = logging.getLogger(__name__)
+
     repo_path = sys.argv[1] if len(sys.argv) > 1 else "."
     repo_path = str(Path(repo_path).resolve())
 
-    print(f"Starting background AI CI daemon...")
-    print(f"Repo: {repo_path}")
-    print(f"Press Ctrl+C to stop\n")
+    logger.info("Starting background AI CI daemon")
+    logger.info("Daemon repo=%s", repo_path)
+    logger.info("Press Ctrl+C to stop")
 
     from swarm.background_loop import start_background_daemon
 
     try:
         start_background_daemon(repo_path)
     except KeyboardInterrupt:
-        print("\nDaemon stopped.")
+        logger.info("Daemon stopped")
         sys.exit(0)

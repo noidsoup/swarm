@@ -14,10 +14,12 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import traceback
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+from swarm.task_models import new_task_id, utcnow_iso
 
 _swarm_root = str(Path(__file__).resolve().parent.parent)
 if _swarm_root not in sys.path:
@@ -26,32 +28,25 @@ if _swarm_root not in sys.path:
 mcp = FastMCP("ai-dev-swarm")
 
 _last_result: dict | None = None
+_last_run_id: str | None = None
+_runs: dict[str, dict] = {}
+_runs_lock = threading.Lock()
 
 
-@mcp.tool()
-def run_swarm(
+def _update_run(run_id: str, **updates) -> None:
+    with _runs_lock:
+        current = _runs.get(run_id, {})
+        current.update(updates)
+        _runs[run_id] = current
+
+
+def _execute_swarm_run(
+    run_id: str,
     plan: str,
-    feature_name: str = "",
-    builder_type: str = "",
-    repo_path: str = "",
-) -> str:
-    """Run the worker swarm pipeline on a plan you provide.
-
-    Cursor acts as commander (architect + judge). This tool runs the
-    worker agents: Build > Review Loop > Quality Gates > Polish.
-
-    Args:
-        plan: The implementation plan (markdown). Be specific with file
-              paths and step-by-step instructions.
-        feature_name: Short name for the feature (used for branch naming).
-        builder_type: Force a specific builder: "python_dev", "react_dev",
-                      "wordpress_dev", or "shopify_dev". Leave empty to auto-detect from plan.
-        repo_path: Absolute path to the target repo. Defaults to cwd.
-
-    Returns:
-        JSON with build_summary, review_feedback, quality_report, and
-        polish_report. Review these results and decide whether to approve.
-    """
+    feature_name: str,
+    builder_type: str,
+    repo_path: str,
+) -> None:
     global _last_result
 
     from swarm.config import cfg
@@ -68,39 +63,96 @@ def run_swarm(
             feature_request=feature_name,
             builder_type=builder_type,
         )
-        result = flow.kickoff()
+        flow.kickoff()
 
-        _last_result = {
+        result = {
             "status": "complete",
+            "task_id": run_id,
             "builder": flow._builder,
             "review_iterations": flow.state.review_iteration,
             "build_summary": flow.state.build_summary[:3000],
             "review_feedback": flow.state.review_feedback[:1500],
             "quality_report": flow.state.quality_report[:3000],
             "polish_report": flow.state.polish_report[:1500],
+            "completed_at": utcnow_iso(),
         }
-        return json.dumps(_last_result, indent=2)
-
+        _last_result = result
+        _update_run(run_id, **result)
     except Exception as e:
         error_result = {
             "status": "error",
+            "task_id": run_id,
             "error": str(e),
             "traceback": traceback.format_exc()[-2000:],
+            "completed_at": utcnow_iso(),
         }
         _last_result = error_result
-        return json.dumps(error_result, indent=2)
+        _update_run(run_id, **error_result)
 
 
 @mcp.tool()
-def swarm_status() -> str:
-    """Check the results of the last swarm run.
+def run_swarm(
+    plan: str,
+    feature_name: str = "",
+    builder_type: str = "",
+    repo_path: str = "",
+) -> str:
+    """Start the worker swarm pipeline in the background.
 
-    Returns the same JSON from the last run_swarm call, or a message
-    if no run has been executed yet.
+    Cursor acts as commander (architect + judge). This tool runs the
+    worker agents: Build > Review Loop > Quality Gates > Polish.
+
+    Args:
+        plan: The implementation plan (markdown). Be specific with file
+              paths and step-by-step instructions.
+        feature_name: Short name for the feature (used for branch naming).
+        builder_type: Force a specific builder: "python_dev", "react_dev",
+                      "wordpress_dev", or "shopify_dev". Leave empty to auto-detect from plan.
+        repo_path: Absolute path to the target repo. Defaults to cwd.
+
+    Returns:
+        JSON with a task_id and initial running status. Poll `swarm_status`
+        with that task_id to retrieve progress and final results.
     """
-    if _last_result is None:
+    global _last_run_id, _last_result
+
+    run_id = new_task_id()
+    _last_run_id = run_id
+    initial_result = {
+        "status": "running",
+        "task_id": run_id,
+        "feature_name": feature_name,
+        "builder_type": builder_type or "auto",
+        "repo_path": repo_path or os.getcwd(),
+        "started_at": utcnow_iso(),
+    }
+    _last_result = initial_result
+    _update_run(run_id, **initial_result)
+
+    thread = threading.Thread(
+        target=_execute_swarm_run,
+        args=(run_id, plan, feature_name, builder_type, repo_path),
+        daemon=True,
+    )
+    thread.start()
+    return json.dumps(initial_result, indent=2)
+
+
+@mcp.tool()
+def swarm_status(task_id: str = "") -> str:
+    """Check the status of a swarm run.
+
+    Pass a specific task_id to poll that run. If omitted, returns the most
+    recent run.
+    """
+    run_id = task_id or _last_run_id
+    if not run_id:
         return json.dumps({"status": "no_runs", "message": "No swarm runs yet. Call run_swarm first."})
-    return json.dumps(_last_result, indent=2)
+    with _runs_lock:
+        result = _runs.get(run_id)
+    if result is None:
+        return json.dumps({"status": "not_found", "task_id": run_id})
+    return json.dumps(result, indent=2)
 
 
 @mcp.tool()

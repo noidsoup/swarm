@@ -11,6 +11,7 @@ Watches the repo for changes and triggers the swarm to:
 from __future__ import annotations
 
 import fnmatch
+import logging
 import time
 from datetime import datetime
 from collections import defaultdict
@@ -20,6 +21,9 @@ try:
     from watchdog.events import FileSystemEventHandler
 except ImportError:
     raise ImportError("pip install watchdog")
+
+
+logger = logging.getLogger(__name__)
 
 
 class CodeChangeHandler(FileSystemEventHandler):
@@ -82,14 +86,14 @@ def watch_repo(repo_path: str, callback, patterns: list[str] | None = None):
     handler = CodeChangeHandler(callback, patterns=patterns)
     observer.schedule(handler, repo_path, recursive=True)
 
-    print(f"[WATCHER] Monitoring {repo_path}")
-    print(f"[WATCHER] Patterns: {', '.join(patterns)}")
+    logger.info("Watcher monitoring repo=%s", repo_path)
+    logger.info("Watcher patterns=%s", ",".join(patterns))
 
     try:
         observer.start()
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n[WATCHER] Stopping...")
+        logger.info("Watcher stopping")
         observer.stop()
     observer.join()

@@ -6,26 +6,27 @@ Runs as: python -m swarm.worker
 from __future__ import annotations
 
 import ipaddress
+import logging
 import os
-import shutil
 import subprocess
-import sys
 import time
 import traceback
 from urllib.parse import urlparse
 
+from swarm.logging_utils import configure_logging
 from swarm.task_models import TaskStatus, utcnow_iso
 from swarm.task_store import store
 
 
 POLL_INTERVAL = int(os.getenv("WORKER_POLL_INTERVAL", "5"))
 WORKSPACE = os.getenv("REPO_ROOT", "/workspace")
+logger = logging.getLogger(__name__)
 
 
 def _log(task_id: str, msg: str) -> None:
     ts = utcnow_iso()
     line = f"[{ts}] {msg}"
-    print(line, flush=True)
+    logger.info("task_id=%s %s", task_id, msg)
     store.append_log(task_id, line)
 
 
@@ -135,8 +136,9 @@ def _run_swarm(task_id: str) -> None:
 
 
 def main() -> None:
-    print(f"Swarm worker started. Polling every {POLL_INTERVAL}s.", flush=True)
-    print(f"Workspace: {WORKSPACE}", flush=True)
+    configure_logging()
+    logger.info("Swarm worker started poll_interval=%s", POLL_INTERVAL)
+    logger.info("Swarm worker workspace=%s", WORKSPACE)
     os.makedirs(WORKSPACE, exist_ok=True)
 
     while True:

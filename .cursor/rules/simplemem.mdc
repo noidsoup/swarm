@@ -1,0 +1,31 @@
+---
+description: SimpleMem memory integration for this project
+alwaysApply: true
+---
+
+# SimpleMem Memory Integration
+
+## Project Namespace
+
+Always use the namespace `swarm` when storing or querying memories for this project.
+
+## Privacy and Security
+
+- NEVER store PII.
+- NEVER store secrets, tokens, passwords, or credentials.
+- Sanitize sensitive fields before storing summaries.
+- Store concise summaries, not full payloads.
+
+## When to Use SimpleMem
+
+- Store project decisions, workflow conventions, and architecture notes.
+- Record task and script summaries without sensitive data.
+- Query previous work before making changes that may revisit past decisions.
+
+## Integration Points
+
+SimpleMem is integrated into:
+- `simplemem_client.py`
+- `simplemem_cli.py`
+
+Enable or adjust it via the repo-local `.env`.
