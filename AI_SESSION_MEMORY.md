@@ -352,3 +352,32 @@ Replace IP/username/key path if different. Expect `"status": "complete"` and a r
 - [ ] On Windows, ensure `SWARM_SMOKE_SKIP_LLM` is unset in the worker environment before startup.
 - [ ] Restart worker in normal mode and rerun the same Mac command with `WINDOWS_SSH_KEY` set.
 - [ ] Confirm a `status=complete` result without the skip-mode note.
+
+---
+
+## 2026-03-12 — Offload path confirmed; real run blocked by Windows LLM timeout
+
+**Branch:** main
+**PR:** none (direct sync requested)
+
+**Completed**
+- Kept the requested offload path only: Mac dispatches with `--mode cursor`, Windows executes via cursor worker.
+- Ran real smoke again from Mac with:
+  - `WINDOWS_CURSOR_TIMEOUT=400`
+  - `WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=120`
+  - `WINDOWS_SSH_KEY=/Users/nicholas/.ssh/id_ed25519_nopass`
+- Task reached Windows and started execution (`task_id=swarm-27c38df1eb49`), but Mac polling ended with heartbeat stall.
+
+**Observed failure**
+- Windows worker log shows model/runtime timeout during build phase:
+  - `litellm.APIConnectionError: OllamaException - litellm.Timeout: Connection timed out after 600.0 seconds.`
+- Outbox terminal result file for this task was not produced (`~/.swarm/outbox/swarm-27c38df1eb49.json` absent), which explains the heartbeat-stalled error on Mac.
+
+**Current state**
+- Mac->Windows transport/offload path is working.
+- Real non-skip run remains blocked by Windows-side LLM execution timeout.
+
+**Next concrete steps**
+- [ ] On Windows, validate model readiness/runtime health before rerun (warm/startup behavior).
+- [ ] Increase worker timeout and rerun one real smoke through the same `--mode cursor` path.
+- [ ] Capture first successful non-skip `status=complete` payload and append it here.
