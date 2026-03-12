@@ -322,3 +322,31 @@ export WINDOWS_CURSOR_TIMEOUT=400 WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=120
 WINDOWS_HOST=192.168.87.126 WINDOWS_USER=nicho python3 scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/nicho/AppData/Local/Temp/smoke-repo"
 ```
 Replace IP/username if different. Expect `"status": "complete"` or a clear error; if timeout, increase worker timeout on Windows and retry.
+
+---
+
+## 2026-03-12 — Mac executed instructed step; key requirement and current mode
+
+**Branch:** main
+**PR:** none (direct sync requested)
+
+**Completed**
+- Pulled latest `main` and followed the exact "Real test instructions (copy-paste)" Mac command.
+- First attempt failed with SSH authentication because `WINDOWS_SSH_KEY` was not set in that command.
+- Reran with explicit key:
+  - `WINDOWS_SSH_KEY=/Users/nicholas/.ssh/id_ed25519_nopass`
+  - Dispatch succeeded with `status=complete` and `task_id=swarm-9f7de8ecb4dc`.
+
+**Observed result**
+- `build_summary` returned:
+  - `STATUS: SMOKE_OK`
+  - `NOTE: Pipeline check only (SWARM_SMOKE_SKIP_LLM=1).`
+
+**Current state / blocker**
+- The Windows worker path is healthy end-to-end, but runs are still in **skip-LLM smoke mode**.
+- True non-skip LLM validation has not yet been confirmed in this run.
+
+**Next concrete steps**
+- [ ] On Windows, ensure `SWARM_SMOKE_SKIP_LLM` is unset in the worker environment before startup.
+- [ ] Restart worker in normal mode and rerun the same Mac command with `WINDOWS_SSH_KEY` set.
+- [ ] Confirm a `status=complete` result without the skip-mode note.
