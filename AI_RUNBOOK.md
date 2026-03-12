@@ -81,10 +81,14 @@ python3 scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --rep
 
 **Fast smoke (no LLM):** On Windows, set `SWARM_SMOKE_SKIP_LLM=1` before starting the worker so the smoke task skips the model and returns immediately. Use this to verify the pipeline end-to-end without waiting for the model. Without it, smoke uses a minimal prompt (read one file, no edits); allow 3–5 minutes or increase the worker timeout.
 
-**4. Stop the worker on Windows** (if needed):
+**4. Start/stop worker (Windows helper):**
 ```powershell
-$pid = Get-Content "$env:TEMP\swarm-worker.pid" -ErrorAction SilentlyContinue; if ($pid) { Stop-Process -Id $pid -ErrorAction SilentlyContinue }
+.\scripts\cursor-worker.ps1 start --fast   # fast smoke (skip LLM, 60s timeout)
+.\scripts\cursor-worker.ps1 start          # full smoke (300s timeout)
+.\scripts\cursor-worker.ps1 stop
+.\scripts\cursor-worker.ps1 status
 ```
+Or manually stop: read PID from `%TEMP%\swarm-worker.pid`, then `Stop-Process -Id <pid> -Force`.
 
 ## Model configuration
 
