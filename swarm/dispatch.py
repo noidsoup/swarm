@@ -87,13 +87,20 @@ class Dispatcher:
             self.cfg.repo_root = repo_path
         self.cfg.auto_commit = False
 
-        with _working_directory(repo_path or self.cfg.repo_root):
+        smoke_profile = _is_smoke_task(plan=plan, feature_name=feature_name)
+        with _working_directory(repo_path or self.cfg.repo_root), _local_execution_profile(
+            self.cfg,
+            smoke_profile=smoke_profile,
+        ):
             flow = WorkerSwarmFlow(
                 plan=plan,
                 feature_request=feature_name,
                 builder_type=builder_type,
             )
-            flow.kickoff()
+            if smoke_profile:
+                flow.run_selected_phases(["build"])
+            else:
+                flow.kickoff()
         return {
             "status": "complete",
             "builder": flow._builder,
@@ -189,3 +196,32 @@ def _working_directory(path: str):
         yield
     finally:
         os.chdir(current)
+
+
+@contextmanager
+def _local_execution_profile(cfg: Any, *, smoke_profile: bool):
+    original_worker_model = getattr(cfg, "worker_model", "")
+    original_max_review_loops = getattr(cfg, "max_review_loops", 3)
+    if smoke_profile:
+        cfg.worker_model = os.getenv(
+            "WORKER_SMOKE_MODEL",
+            os.getenv("WORKER_FALLBACK_MODEL", "ollama/gemma3:4b"),
+        )
+        cfg.max_review_loops = 1
+    try:
+        yield
+    finally:
+        cfg.worker_model = original_worker_model
+        cfg.max_review_loops = original_max_review_loops
+
+
+def _is_smoke_task(*, plan: str, feature_name: str) -> bool:
+    text = f"{feature_name}\n{plan}".lower()
+    smoke_markers = (
+        "smoke test",
+        "cursor smoke",
+        "e2e smoke",
+        "health check",
+        "sanity check",
+    )
+    return any(marker in text for marker in smoke_markers)

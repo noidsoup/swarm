@@ -48,3 +48,60 @@ def test_dispatch_local_runs_flow_from_repo_path(tmp_path: Path, monkeypatch) ->
     assert result["status"] == "complete"
     assert observed["cwd"] == str(tmp_path)
     assert Path.cwd() == original_cwd
+
+
+def test_dispatch_local_uses_lightweight_profile_for_smoke_tasks(tmp_path: Path, monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    class FakeFlow:
+        def __init__(self, plan: str, feature_request: str, builder_type: str) -> None:
+            observed["worker_model_at_init"] = cfg.worker_model
+            observed["max_reviews_at_init"] = cfg.max_review_loops
+            self._builder = builder_type or "python_dev"
+            self.state = SimpleNamespace(
+                review_iteration=0,
+                build_summary="smoke-done",
+                review_feedback="",
+                quality_report="",
+                polish_report="",
+            )
+
+        def kickoff(self) -> None:
+            observed["kickoff_called"] = True
+
+        def run_selected_phases(self, selected_phases: list[str]) -> str:
+            observed["selected_phases"] = list(selected_phases)
+            return "ok"
+
+    from swarm import dispatch as dispatch_module
+    from swarm.config import cfg
+
+    fake_module = ModuleType("swarm.flow")
+    fake_module.WorkerSwarmFlow = FakeFlow
+    monkeypatch.setitem(sys.modules, "swarm.flow", fake_module)
+    monkeypatch.setenv("WORKER_FALLBACK_MODEL", "ollama/gemma3:4b")
+
+    original_worker_model = cfg.worker_model
+    original_max_reviews = cfg.max_review_loops
+    cfg.worker_model = "ollama/qwen2.5-coder:7b"
+    cfg.max_review_loops = 3
+
+    dispatcher = Dispatcher(cfg)
+    result = dispatcher.dispatch(
+        plan="cursor smoke test",
+        feature_name="cursor smoke test",
+        builder_type="python_dev",
+        repo_path=str(tmp_path),
+        execution_mode="local",
+    )
+
+    assert result["status"] == "complete"
+    assert observed["worker_model_at_init"] == "ollama/gemma3:4b"
+    assert observed["max_reviews_at_init"] == 1
+    assert observed["selected_phases"] == ["build"]
+    assert "kickoff_called" not in observed
+    assert cfg.worker_model == "ollama/qwen2.5-coder:7b"
+    assert cfg.max_review_loops == 3
+
+    cfg.worker_model = original_worker_model
+    cfg.max_review_loops = original_max_reviews
