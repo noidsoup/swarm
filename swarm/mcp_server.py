@@ -116,6 +116,15 @@ def run_swarm(
     """
     global _last_run_id, _last_result
 
+    if repo_path:
+        resolved = Path(repo_path).resolve()
+        if not resolved.is_dir():
+            return json.dumps({
+                "status": "error",
+                "error": f"repo_path is not a valid directory: {repo_path}",
+            })
+        repo_path = str(resolved)
+
     run_id = new_task_id()
     _last_run_id = run_id
     initial_result = {

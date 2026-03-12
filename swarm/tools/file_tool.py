@@ -69,12 +69,15 @@ class FileWriteTool(BaseTool):
             return f"[ERROR] {e}"
 
 
+_MAX_DEPTH_LIMIT = 10
+
+
 class ListDirInput(BaseModel):
     path: str = Field(
         default=".",
         description="Relative directory path to list (default: repo root)",
     )
-    max_depth: int = Field(default=2, description="Max directory depth to list")
+    max_depth: int = Field(default=2, description="Max directory depth to list (capped at 10)")
 
 
 class ListDirectoryTool(BaseTool):
@@ -83,6 +86,7 @@ class ListDirectoryTool(BaseTool):
     args_schema: Type[BaseModel] = ListDirInput
 
     def _run(self, path: str = ".", max_depth: int = 2) -> str:
+        max_depth = min(max(max_depth, 1), _MAX_DEPTH_LIMIT)
         try:
             root = _resolve_repo_path(path)
         except ValueError as e:
