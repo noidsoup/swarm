@@ -199,3 +199,32 @@ Session summaries and state for the AI Dev Swarm project.
 - [ ] Increase worker timeout for smoke runs (or reduce smoke prompt further) and rerun one Mac->Windows cursor smoke test.
 - [ ] Capture one successful terminal outbox payload (`status=complete`) from the same smoke path.
 - [ ] Optionally clean/standardize SSH tunnel behavior to remove repeated local forward bind warnings.
+
+---
+
+## 2026-03-12 — Windows: smoke test path and “continue on Mac”
+
+**Branch:** main (all pushed)
+
+**Completed (Windows side)**
+- Smoke task uses a **trimmed prompt** (read one file, no edits) and a **fast path**: `SWARM_SMOKE_SKIP_LLM=1` skips the LLM and returns a fixed success so the pipeline test passes regardless of model speed.
+- **AI_RUNBOOK.md** — “Cursor smoke test (Mac → Windows)” section: worker startup (300s or 60s with skip), Mac dispatch command, and **Fast smoke (no LLM)** using `SWARM_SMOKE_SKIP_LLM=1`.
+- **Tests:** `test_dispatch_local_smoke_skip_llm_returns_immediately`; lightweight smoke test forces LLM path with `SWARM_SMOKE_SKIP_LLM=0`.
+- Local-mode smoke with `SWARM_SMOKE_SKIP_LLM=1` returns `"status": "complete"` in a few seconds. Cursor-mode smoke still hits worker task timeout when the real LLM runs (120s/300s not enough on this Windows setup).
+
+**How to continue on your Mac**
+1. **Pull latest:** `git pull origin main`
+2. **Fast cursor smoke (recommended):**  
+   - On **Windows**: start the worker with skip-LLM so the test finishes quickly:
+     - `$env:SWARM_SMOKE_SKIP_LLM = "1"`  
+     - `python scripts/cursor_worker.py --daemon --task-timeout 60 --log-file "$env:TEMP\swarm-worker.log" --pid-file "$env:TEMP\swarm-worker.pid"`
+   - On **Mac** (from swarm repo):  
+     - `python scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"`  
+     - Use a path that exists on the Windows machine (or create a small repo there).
+   - Expect `"status": "complete"` and `build_summary` containing `SMOKE_OK` and `SWARM_SMOKE_SKIP_LLM`.
+3. **Full smoke (with LLM):** On Windows, start the worker **without** `SWARM_SMOKE_SKIP_LLM` and use a long task timeout (e.g. 300–600s). Then run the same Mac dispatch; allow several minutes.
+4. **Runbook:** See **AI_RUNBOOK.md** → “Cursor smoke test (Mac → Windows)” for full steps and stop-worker command.
+
+**Next steps (Mac or Windows)**
+- Run the fast smoke from Mac once to confirm end-to-end (worker on Windows with `SWARM_SMOKE_SKIP_LLM=1`).
+- Optionally tune worker timeout or model for full (LLM) smoke if you want that path to pass.
