@@ -1,0 +1,134 @@
+services:
+  # ---------------------------------------------------------------------------
+  # Ollama — LLM inference with GPU
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: swarm-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Redis — task queue backend
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: swarm-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Swarm API — FastAPI gateway for remote task submission
+  # ---------------------------------------------------------------------------
+  swarm-api:
+    build: .
+    container_name: swarm-api
+    command: >
+      uvicorn swarm.api:app
+      --host 0.0.0.0 --port 9000
+      --workers 1
+      --log-level info
+    ports:
+      - "9000:9000"
+    depends_on:
+      ollama:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WORKER_MODEL=${WORKER_MODEL:-ollama/qwen2.5-coder:7b}
+      - PLANNER_MODEL=${PLANNER_MODEL:-}
+      - REVIEWER_MODEL=${REVIEWER_MODEL:-}
+      - LINTER_MODEL=${LINTER_MODEL:-}
+      - REDIS_URL=redis://redis:6379/0
+      - REPO_ROOT=/workspace
+      - SWARM_MODE=headless
+      - AUTO_COMMIT=false
+    volumes:
+      - ./workspace:/workspace
+      - swarm_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Swarm Worker — picks tasks off the Redis queue and runs the agent pipeline
+  # ---------------------------------------------------------------------------
+  swarm-worker:
+    build: .
+    container_name: swarm-worker
+    command: python -m swarm.worker
+    depends_on:
+      ollama:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WORKER_MODEL=${WORKER_MODEL:-ollama/qwen2.5-coder:7b}
+      - PLANNER_MODEL=${PLANNER_MODEL:-}
+      - REVIEWER_MODEL=${REVIEWER_MODEL:-}
+      - LINTER_MODEL=${LINTER_MODEL:-}
+      - REDIS_URL=redis://redis:6379/0
+      - REPO_ROOT=/workspace
+      - SWARM_MODE=headless
+      - AUTO_COMMIT=false
+    volumes:
+      - ./workspace:/workspace
+      - swarm_logs:/app/logs
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Swarm MCP Server — for Cursor remote SSH integration
+  # ---------------------------------------------------------------------------
+  swarm-mcp:
+    build: .
+    container_name: swarm-mcp
+    command: python swarm/mcp_server.py
+    ports:
+      - "8000:8000"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WORKER_MODEL=${WORKER_MODEL:-ollama/qwen2.5-coder:7b}
+      - REPO_ROOT=/workspace
+    volumes:
+      - ./workspace:/workspace
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  redis_data:
+  swarm_logs:

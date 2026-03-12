@@ -18,6 +18,21 @@ setup(
         "gitpython>=3.1.0",
         "watchdog>=3.0.0",
     ],
+    extras_require={
+        "docker": [
+            "fastapi>=0.115.0",
+            "uvicorn[standard]>=0.34.0",
+            "redis>=5.0.0",
+            "rq>=2.0.0",
+            "httpx>=0.28.0",
+            "sse-starlette>=2.0.0",
+            "psutil>=6.0.0",
+        ],
+        "client": [
+            "httpx>=0.28.0",
+            "rich>=13.0.0",
+        ],
+    },
     scripts=[
         "swarm-run",
         "swarm-daemon",
