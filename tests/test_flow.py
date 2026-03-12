@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import swarm.flow as flow_module
 
@@ -117,3 +118,46 @@ def test_worker_swarm_flow_can_run_selected_phases(monkeypatch) -> None:
     assert flow.state.review_iteration == 0
     assert flow.state.quality_report == "quality report"
     assert flow.state.polish_report == ""
+
+
+def test_build_phase_writes_checkpoints_and_captured_stdout(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        flow_module,
+        "build_agents",
+        lambda: {
+            "python_dev": object(),
+            "react_dev": object(),
+            "wordpress_dev": object(),
+            "shopify_dev": object(),
+            "reviewer": object(),
+            "security": object(),
+            "performance": object(),
+            "tester": object(),
+            "refactorer": object(),
+            "docs": object(),
+            "linter_agent": object(),
+        },
+    )
+    monkeypatch.setattr(flow_module, "build_task", lambda agent, plan: ("build", plan))
+
+    class VerboseCrew(DummyCrew):
+        def kickoff(self) -> str:
+            print("tool call started")
+            return self.result
+
+    monkeypatch.setattr(flow_module, "solo_crew", lambda agent, task, verbose=True: VerboseCrew("built feature"))
+
+    flow = flow_module.WorkerSwarmFlow(plan="Ship it")
+    flow.state.run_artifacts_dir = str(tmp_path)
+
+    result = flow._run_build_phase()
+
+    assert result == "built feature"
+    build_log = Path(tmp_path) / "build_phase.log"
+    assert build_log.exists()
+    content = build_log.read_text(encoding="utf-8")
+    assert "checkpoint=build_phase_started" in content
+    assert "checkpoint=build_task_created" in content
+    assert "checkpoint=build_kickoff_started" in content
+    assert "tool call started" in content
+    assert "checkpoint=build_kickoff_completed" in content

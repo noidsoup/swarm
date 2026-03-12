@@ -10,9 +10,12 @@ Two modes:
 
 from __future__ import annotations
 
+from contextlib import nullcontext, redirect_stderr, redirect_stdout
 import json
 import logging
+from pathlib import Path
 import re
+import sys
 
 from crewai.flow.flow import Flow, listen, router, start
 from pydantic import BaseModel
@@ -40,6 +43,39 @@ from swarm.tasks import (
 from swarm.tools.git_tool import _git
 
 logger = logging.getLogger(__name__)
+
+
+class _TeeStream:
+    def __init__(self, *streams):
+        self._streams = [stream for stream in streams if stream is not None]
+
+    def write(self, data: str) -> int:
+        for stream in self._streams:
+            stream.write(data)
+        return len(data)
+
+    def flush(self) -> None:
+        for stream in self._streams:
+            stream.flush()
+
+
+def _build_phase_log_path(run_artifacts_dir: str) -> Path | None:
+    if not run_artifacts_dir:
+        return None
+    return Path(run_artifacts_dir) / "build_phase.log"
+
+
+def _append_build_phase_trace(run_artifacts_dir: str, checkpoint: str, **metadata) -> None:
+    path = _build_phase_log_path(run_artifacts_dir)
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    meta = " ".join(f"{key}={value}" for key, value in metadata.items() if value != "")
+    line = f"checkpoint={checkpoint}"
+    if meta:
+        line += f" {meta}"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +181,7 @@ class BaseSwarmFlow(Flow[SwarmState]):
 
     def _run_build_phase(self) -> str:
         _log_phase(f"BUILD ({self._builder})")
+        _append_build_phase_trace(self.state.run_artifacts_dir, "build_phase_started", builder=self._builder)
         builder = self._agents[self._builder]
         task = build_task(
             builder,
@@ -158,8 +195,27 @@ class BaseSwarmFlow(Flow[SwarmState]):
                 output_format="List exact file paths changed and summarize each change.",
             ),
         )
+        _append_build_phase_trace(self.state.run_artifacts_dir, "build_task_created", builder=self._builder)
         crew = solo_crew(builder, task, verbose=cfg.verbose)
-        result = crew.kickoff()
+        build_log_path = _build_phase_log_path(self.state.run_artifacts_dir)
+        if build_log_path is not None:
+            build_log_path.parent.mkdir(parents=True, exist_ok=True)
+            build_log_file = build_log_path.open("a", encoding="utf-8")
+            stdout_cm = redirect_stdout(_TeeStream(sys.stdout, build_log_file))
+            stderr_cm = redirect_stderr(_TeeStream(sys.stderr, build_log_file))
+        else:
+            build_log_file = None
+            stdout_cm = nullcontext()
+            stderr_cm = nullcontext()
+
+        _append_build_phase_trace(self.state.run_artifacts_dir, "build_kickoff_started", builder=self._builder)
+        try:
+            with stdout_cm, stderr_cm:
+                result = crew.kickoff()
+        finally:
+            if build_log_file is not None:
+                build_log_file.close()
+        _append_build_phase_trace(self.state.run_artifacts_dir, "build_kickoff_completed", builder=self._builder)
         self.state.build_summary = str(result)
         logger.info("Build completed builder=%s summary=%s", self._builder, self.state.build_summary[:500])
         return self.state.build_summary

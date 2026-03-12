@@ -24,6 +24,7 @@ def test_artifact_file_map_includes_expected_files(tmp_path: Path) -> None:
         "validation": str(tmp_path / ".swarm" / "runs" / "swarm-abc123" / "validation.json"),
         "eval": str(tmp_path / ".swarm" / "runs" / "swarm-abc123" / "eval.json"),
         "events": str(tmp_path / ".swarm" / "runs" / "swarm-abc123" / "events.jsonl"),
+        "build_phase_log": str(tmp_path / ".swarm" / "runs" / "swarm-abc123" / "build_phase.log"),
     }
 
 

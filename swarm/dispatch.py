@@ -11,6 +11,8 @@ from typing import Any
 import requests
 
 from swarm.cursor_worker import CursorWorkerClient
+from swarm.run_artifacts import ensure_artifact_dir
+from swarm.task_models import new_task_id
 from swarm.task_models import utcnow_iso
 
 
@@ -92,11 +94,14 @@ class Dispatcher:
             self.cfg,
             smoke_profile=smoke_profile,
         ):
+            task_id = new_task_id()
+            artifact_dir = ensure_artifact_dir(repo_path or self.cfg.repo_root, task_id)
             flow = WorkerSwarmFlow(
                 plan=plan,
                 feature_request=feature_name,
                 builder_type=builder_type,
             )
+            flow.state.run_artifacts_dir = artifact_dir
             if smoke_profile:
                 flow.run_selected_phases(["build"])
             else:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 import subprocess
@@ -13,6 +14,8 @@ import time
 from typing import Any
 
 from swarm.task_models import new_task_id, utcnow_iso
+
+logger = logging.getLogger(__name__)
 
 
 class CursorWorkerClient:
@@ -141,6 +144,7 @@ class CursorWorkerService:
             else float(os.getenv("WINDOWS_CURSOR_TASK_TIMEOUT", "3600"))
         )
         self.heartbeat_interval = max(float(heartbeat_interval), 0.1)
+        self._write_lock = threading.Lock()
         self.inbox.mkdir(parents=True, exist_ok=True)
         self.outbox.mkdir(parents=True, exist_ok=True)
 
@@ -166,9 +170,10 @@ class CursorWorkerService:
                 "quality_report": "",
                 "polish_report": "",
             }
-            self._finalize_result(task_path.stem, result)
-            task_path.unlink(missing_ok=True)
-            return True
+            if self._safe_finalize_result(task_path.stem, result):
+                task_path.unlink(missing_ok=True)
+                return True
+            return False
 
         task_id = str(payload.get("task_id") or task_path.stem)
         started_at = utcnow_iso()
@@ -215,13 +220,20 @@ class CursorWorkerService:
             result = dict(result_holder.get("result") or {})
             result.setdefault("status", "complete")
 
-        self._finalize_result(task_id, result, started_at=started_at)
-        task_path.unlink(missing_ok=True)
-        return True
+        if self._safe_finalize_result(task_id, result, started_at=started_at):
+            task_path.unlink(missing_ok=True)
+            return True
+        return False
 
     def run_forever(self, poll_interval: float = 2.0) -> None:
         while True:
-            processed = self.process_once()
+            try:
+                processed = self.process_once()
+            except KeyboardInterrupt:
+                raise
+            except Exception:
+                logger.exception("Cursor worker loop iteration crashed")
+                processed = False
             if not processed:
                 time.sleep(poll_interval)
 
@@ -261,17 +273,20 @@ class CursorWorkerService:
         stop_event: threading.Event,
     ) -> None:
         while not stop_event.is_set():
-            self._write_result(
-                task_id,
-                {
-                    "status": "running",
-                    "task_id": task_id,
-                    "feature_name": str(payload.get("feature_name", "")),
-                    "started_at": started_at,
-                    "heartbeat_at": utcnow_iso(),
-                    "execution_mode": "cursor",
-                },
-            )
+            try:
+                self._write_result(
+                    task_id,
+                    {
+                        "status": "running",
+                        "task_id": task_id,
+                        "feature_name": str(payload.get("feature_name", "")),
+                        "started_at": started_at,
+                        "heartbeat_at": utcnow_iso(),
+                        "execution_mode": "cursor",
+                    },
+                )
+            except Exception:
+                logger.exception("Failed to write cursor worker heartbeat task_id=%s", task_id)
             stop_event.wait(self.heartbeat_interval)
 
     def _finalize_result(self, task_id: str, result: dict[str, Any], started_at: str = "") -> None:
@@ -286,11 +301,29 @@ class CursorWorkerService:
         result["execution_mode"] = "cursor"
         self._write_result(task_id, result)
 
+    def _safe_finalize_result(self, task_id: str, result: dict[str, Any], started_at: str = "") -> bool:
+        try:
+            self._finalize_result(task_id, result, started_at=started_at)
+            return True
+        except Exception:
+            logger.exception("Failed to write cursor worker result task_id=%s", task_id)
+            return False
+
     def _write_result(self, task_id: str, result: dict[str, Any]) -> None:
         outbox_path = self.outbox / f"{task_id}.json"
-        temp_path = outbox_path.with_suffix(".tmp")
-        temp_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
-        temp_path.replace(outbox_path)
+        self.outbox.mkdir(parents=True, exist_ok=True)
+        with self._write_lock:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                suffix=".tmp",
+                prefix=f"{task_id}-",
+                dir=self.outbox,
+                delete=False,
+            ) as tmp:
+                json.dump(result, tmp, indent=2)
+                temp_path = Path(tmp.name)
+            temp_path.replace(outbox_path)
 
 
 def build_cursor_worker_daemon_command(

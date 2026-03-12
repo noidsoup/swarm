@@ -6,6 +6,8 @@ import subprocess
 import time
 from types import SimpleNamespace
 
+import pytest
+
 from swarm.cursor_worker import (
     CursorWorkerClient,
     CursorWorkerService,
@@ -209,3 +211,48 @@ def test_build_cursor_worker_daemon_command_includes_runtime_options(tmp_path: P
     assert "--root" in joined
     assert "--poll-interval" in joined
     assert "--task-timeout" in joined
+
+
+def test_cursor_worker_service_returns_false_when_result_write_fails(tmp_path: Path, monkeypatch) -> None:
+    service = CursorWorkerService(root=tmp_path, dispatcher=DummyDispatcher())
+    inbox_file = tmp_path / "inbox" / "swarm-writefail.json"
+    inbox_file.parent.mkdir(parents=True, exist_ok=True)
+    inbox_file.write_text(
+        json.dumps(
+            {
+                "task_id": "swarm-writefail",
+                "plan": "Write fails",
+                "feature_name": "demo",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fail_finalize(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(service, "_finalize_result", fail_finalize)
+
+    processed = service.process_once()
+
+    assert processed is False
+    assert inbox_file.exists()
+
+
+def test_cursor_worker_service_run_forever_continues_after_loop_exception(monkeypatch, tmp_path: Path) -> None:
+    service = CursorWorkerService(root=tmp_path, dispatcher=DummyDispatcher())
+    calls: list[str] = []
+
+    def fake_process_once() -> bool:
+        calls.append("call")
+        if len(calls) == 1:
+            raise OSError("disk full")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(service, "process_once", fake_process_once)
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+
+    with pytest.raises(KeyboardInterrupt):
+        service.run_forever(poll_interval=0)
+
+    assert len(calls) == 2

@@ -38,4 +38,5 @@ def artifact_file_map(root: str, task_id: str) -> dict[str, str]:
         "validation": str(artifact_dir / "validation.json"),
         "eval": str(artifact_dir / "eval.json"),
         "events": str(artifact_dir / "events.jsonl"),
+        "build_phase_log": str(artifact_dir / "build_phase.log"),
     }

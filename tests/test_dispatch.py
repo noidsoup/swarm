@@ -73,7 +73,6 @@ def test_dispatch_local_uses_lightweight_profile_for_smoke_tasks(tmp_path: Path,
             observed["selected_phases"] = list(selected_phases)
             return "ok"
 
-    from swarm import dispatch as dispatch_module
     from swarm.config import cfg
 
     fake_module = ModuleType("swarm.flow")
@@ -105,3 +104,46 @@ def test_dispatch_local_uses_lightweight_profile_for_smoke_tasks(tmp_path: Path,
 
     cfg.worker_model = original_worker_model
     cfg.max_review_loops = original_max_reviews
+
+
+def test_dispatch_local_sets_run_artifacts_dir_under_repo(tmp_path: Path, monkeypatch) -> None:
+    observed: dict[str, str] = {}
+
+    class FakeFlow:
+        def __init__(self, plan: str, feature_request: str, builder_type: str) -> None:
+            self._builder = builder_type or "python_dev"
+            self.state = SimpleNamespace(
+                review_iteration=0,
+                build_summary="done",
+                review_feedback="",
+                quality_report="",
+                polish_report="",
+                run_artifacts_dir="",
+            )
+
+        def kickoff(self) -> None:
+            observed["run_artifacts_dir"] = self.state.run_artifacts_dir
+
+    fake_module = ModuleType("swarm.flow")
+    fake_module.WorkerSwarmFlow = FakeFlow
+    monkeypatch.setitem(sys.modules, "swarm.flow", fake_module)
+
+    cfg = SimpleNamespace(
+        default_execution_mode="local",
+        repo_root=str(tmp_path),
+        auto_commit=True,
+    )
+    dispatcher = Dispatcher(cfg)
+
+    result = dispatcher.dispatch(
+        plan="Test plan",
+        feature_name="demo",
+        builder_type="python_dev",
+        repo_path=str(tmp_path),
+        execution_mode="local",
+    )
+
+    assert result["status"] == "complete"
+    assert observed["run_artifacts_dir"]
+    assert Path(observed["run_artifacts_dir"]).is_dir()
+    assert Path(observed["run_artifacts_dir"]).parent == tmp_path / ".swarm" / "runs"
