@@ -96,8 +96,9 @@ class Dispatcher:
         ):
             task_id = new_task_id()
             artifact_dir = ensure_artifact_dir(repo_path or self.cfg.repo_root, task_id)
+            effective_plan = _smoke_task_plan(plan=plan, feature_name=feature_name) if smoke_profile else plan
             flow = WorkerSwarmFlow(
-                plan=plan,
+                plan=effective_plan,
                 feature_request=feature_name,
                 builder_type=builder_type,
             )
@@ -230,3 +231,17 @@ def _is_smoke_task(*, plan: str, feature_name: str) -> bool:
         "sanity check",
     )
     return any(marker in text for marker in smoke_markers)
+
+
+def _smoke_task_plan(*, plan: str, feature_name: str) -> str:
+    summary = (feature_name or plan or "cursor smoke test").strip()
+    return (
+        "SMOKE TASK (FAST PATH):\n"
+        f"- Scope: {summary}\n"
+        "- Do not modify files.\n"
+        "- Read at most one small repo file (prefer app.py, then README.md) to verify tool access.\n"
+        "- Avoid long analysis, full-project scans, or multi-step refactors.\n"
+        "- Return exactly 2 lines:\n"
+        "  1) STATUS: SMOKE_OK or SMOKE_BLOCKED\n"
+        "  2) NOTE: one short sentence with the checked file path or blocker."
+    )

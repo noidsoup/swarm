@@ -55,6 +55,7 @@ def test_dispatch_local_uses_lightweight_profile_for_smoke_tasks(tmp_path: Path,
 
     class FakeFlow:
         def __init__(self, plan: str, feature_request: str, builder_type: str) -> None:
+            observed["plan"] = plan
             observed["worker_model_at_init"] = cfg.worker_model
             observed["max_reviews_at_init"] = cfg.max_review_loops
             self._builder = builder_type or "python_dev"
@@ -98,6 +99,8 @@ def test_dispatch_local_uses_lightweight_profile_for_smoke_tasks(tmp_path: Path,
     assert observed["worker_model_at_init"] == "ollama/gemma3:4b"
     assert observed["max_reviews_at_init"] == 1
     assert observed["selected_phases"] == ["build"]
+    assert "SMOKE TASK (FAST PATH)" in str(observed["plan"])
+    assert "Do not modify files." in str(observed["plan"])
     assert "kickoff_called" not in observed
     assert cfg.worker_model == "ollama/qwen2.5-coder:7b"
     assert cfg.max_review_loops == 3

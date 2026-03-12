@@ -54,6 +54,30 @@ python scripts/swarm_remote.py status <task-id>
 python scripts/swarm_remote.py log <task-id>
 ```
 
+## Cursor smoke test (Mac → Windows)
+
+Use this to verify the cursor worker path works end-to-end.
+
+**1. On Windows** (in the swarm repo, with Ollama running):
+```powershell
+# Optional: set a short timeout so smoke finishes quickly (default 3600)
+$env:WINDOWS_CURSOR_TASK_TIMEOUT = "120"
+python scripts/cursor_worker.py --daemon --poll-interval 2 --task-timeout 120 --log-file "$env:TEMP\swarm-worker.log" --pid-file "$env:TEMP\swarm-worker.pid"
+```
+
+**2. On Mac** (in the swarm repo; SSH to Windows and env set per `.env` / REMOTE_SETUP.md):
+```bash
+# Use a small throwaway repo path that exists on Windows (e.g. a clone or temp dir)
+python scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"
+```
+
+**3. Expect:** Command returns with `"status": "complete"` and a short `build_summary`, or a clear `error` (e.g. timeout). Smoke tasks use a minimal prompt (read one file, no edits) so they should finish within the worker timeout.
+
+**4. Stop the worker on Windows** (if needed):
+```powershell
+$pid = Get-Content "$env:TEMP\swarm-worker.pid" -ErrorAction SilentlyContinue; if ($pid) { Stop-Process -Id $pid -ErrorAction SilentlyContinue }
+```
+
 ## Model configuration
 
 | Variable | Default | Purpose |
