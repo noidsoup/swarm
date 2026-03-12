@@ -381,3 +381,31 @@ Replace IP/username/key path if different. Expect `"status": "complete"` and a r
 - [ ] On Windows, validate model readiness/runtime health before rerun (warm/startup behavior).
 - [ ] Increase worker timeout and rerun one real smoke through the same `--mode cursor` path.
 - [ ] Capture first successful non-skip `status=complete` payload and append it here.
+
+---
+
+## 2026-03-12 — Mac continue pass for Windows handoff
+
+**Branch:** main
+**PR:** none (direct sync requested)
+
+**Completed**
+- Pulled latest `main` and continued from Mac on the required offload path (`--mode cursor` only).
+- Ran smoke dispatch from Mac with explicit SSH key and client timeouts:
+  - `WINDOWS_CURSOR_TIMEOUT=400`
+  - `WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=120`
+  - `WINDOWS_SSH_KEY=/Users/nicholas/.ssh/id_ed25519_nopass`
+- Latest task reached Windows but stalled on heartbeat (`task_id=swarm-7c322fb81f5b`).
+
+**Observed behavior**
+- Worker logs still show model/runtime timeout symptoms during execution.
+- Outbox terminal result file for the stalled task was not created.
+- Isolated queue-root attempt (`~/.swarm-mactest`) did not stabilize the run because the daemon process exited immediately.
+
+**Windows next step (exact)**
+- Run the worker once in foreground to capture startup/runtime stderr directly:
+  - `python scripts/cursor_worker.py --root "~/.swarm" --task-timeout 300`
+
+**After Windows confirms foreground run**
+- Mac should rerun:
+  - `WINDOWS_CURSOR_TIMEOUT=400 WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=120 WINDOWS_SSH_KEY=/Users/nicholas/.ssh/id_ed25519_nopass WINDOWS_HOST=192.168.87.126 WINDOWS_USER=nicho python3 scripts/swarm_remote.py dispatch "cursor smoke test" --mode cursor --repo-path "C:/Users/nicho/AppData/Local/Temp/smoke-repo"`
