@@ -56,6 +56,23 @@ def _update_run(run_id: str, **updates) -> None:
         _runs[run_id] = current
 
 
+def _with_learning_summaries(payload: dict, *, artifacts_dir: str = "") -> dict:
+    enriched = dict(payload)
+    for key in (
+        "context_summary",
+        "retrieval_summary",
+        "validation_summary",
+        "eval_summary",
+        "adaptation_summary",
+    ):
+        enriched.setdefault(key, "")
+    if artifacts_dir:
+        enriched.setdefault("artifacts_dir", artifacts_dir)
+    else:
+        enriched.setdefault("artifacts_dir", "")
+    return enriched
+
+
 def _write_lesson(result: dict, failure_kind: str = "") -> None:
     try:
         client = SimpleMemClient(load_simplemem_settings())
@@ -166,6 +183,7 @@ def _execute_swarm_run(
                 "score": eval_report["score"],
             }
         )
+        result = _with_learning_summaries(result, artifacts_dir=artifacts_dir)
         _last_result = result
         _update_run(run_id, **result)
         _write_lesson(result)
@@ -182,7 +200,8 @@ def _execute_swarm_run(
         )
         with open(artifact_paths["eval"], "w", encoding="utf-8") as f:
             json.dump(eval_report, f, indent=2)
-        error_result = {
+        error_result = _with_learning_summaries(
+            {
             "status": "error",
             "task_id": run_id,
             "error": str(e),
@@ -190,7 +209,9 @@ def _execute_swarm_run(
             "score": eval_report["score"],
             "traceback": traceback.format_exc()[-2000:],
             "completed_at": utcnow_iso(),
-        }
+            },
+            artifacts_dir=artifacts_dir,
+        )
         _last_result = error_result
         _update_run(run_id, **error_result)
         _write_lesson(error_result, failure_kind="execution_failed")
@@ -230,7 +251,7 @@ def run_swarm(
     run_id = new_task_id()
     _last_run_id = run_id
     mode = (execution_mode or cfg.default_execution_mode or "local").lower()
-    initial_result = {
+    initial_result = _with_learning_summaries({
         "status": "running",
         "task_id": run_id,
         "feature_name": feature_name,
@@ -242,7 +263,7 @@ def run_swarm(
         "context_summary": summarize_context_pack(build_context_pack(repo_path or os.getcwd(), feature_name, plan)),
         "retrieval_summary": "",
         "started_at": utcnow_iso(),
-    }
+    })
     _last_result = initial_result
     _update_run(run_id, **initial_result)
 
@@ -356,7 +377,7 @@ def swarm_status(task_id: str = "") -> str:
         result = _runs.get(run_id)
     if result is None:
         return json.dumps({"status": "not_found", "task_id": run_id})
-    return json.dumps(result, indent=2)
+    return json.dumps(_with_learning_summaries(result), indent=2)
 
 
 @mcp.tool()

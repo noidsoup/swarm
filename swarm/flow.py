@@ -20,6 +20,12 @@ from pydantic import BaseModel
 from swarm.agents import build_agents
 from swarm.config import cfg
 from swarm.crews import quality_crew, solo_crew
+from swarm.prompt_blocks import (
+    build_constraints_block,
+    build_context_block,
+    build_retrieval_block,
+    compose_task_prompt,
+)
 from swarm.tasks import (
     build_task,
     docs_task,
@@ -104,52 +110,54 @@ class BaseSwarmFlow(Flow[SwarmState]):
         self._agents = build_agents()
         self._builder = builder_type or _pick_builder(feature_request or plan)
 
-    def _context_prompt(self) -> str:
+    def _context_block(self) -> str:
         if not self.state.context_pack_json:
             return ""
         try:
             context_pack = json.loads(self.state.context_pack_json)
         except json.JSONDecodeError:
             return ""
+        return build_context_block(context_pack)
 
-        lines = [
-            "REPO CONTEXT:",
-            f"- Summary: {context_pack.get('repo_summary', 'Unknown repo')}",
-            f"- Builder hint: {context_pack.get('builder_hint', self._builder)}",
-        ]
-        instructions = context_pack.get("instructions", [])
-        if instructions:
-            lines.append(f"- Instructions: {', '.join(instructions[:3])}")
-        risk_areas = context_pack.get("risk_areas", [])
-        if risk_areas:
-            lines.append(f"- Risk areas: {', '.join(risk_areas[:3])}")
-        return "\n".join(lines) + "\n\n"
-
-    def _retrieval_prompt(self) -> str:
+    def _retrieval_block(self) -> str:
         if not self.state.retrieval_pack_json:
             return ""
         try:
             retrieval_pack = json.loads(self.state.retrieval_pack_json)
         except json.JSONDecodeError:
             return ""
+        return build_retrieval_block(retrieval_pack)
 
-        lines = ["RETRIEVAL HINTS:"]
-        files = retrieval_pack.get("files", [])
-        if files:
-            lines.append("- Relevant files: " + ", ".join(item.get("path", "") for item in files[:3]))
-        memories = retrieval_pack.get("memories", [])
-        if memories:
-            memory_text = str(memories[0].get("text", ""))[:180]
-            if memory_text:
-                lines.append(f"- Prior lesson: {memory_text}")
-        if len(lines) == 1:
-            return ""
-        return "\n".join(lines) + "\n\n"
+    def _compose_phase_prompt(
+        self,
+        *,
+        task_text: str,
+        constraints: list[str] | None = None,
+        output_format: str = "",
+    ) -> str:
+        return compose_task_prompt(
+            task_text=task_text,
+            context_block=self._context_block(),
+            retrieval_block=self._retrieval_block(),
+            constraints_block=build_constraints_block(constraints or []),
+            output_format=output_format,
+        )
 
     def _run_build_phase(self) -> str:
         _log_phase(f"BUILD ({self._builder})")
         builder = self._agents[self._builder]
-        task = build_task(builder, f"{self._context_prompt()}{self._retrieval_prompt()}{self.state.plan}")
+        task = build_task(
+            builder,
+            self._compose_phase_prompt(
+                task_text=self.state.plan,
+                constraints=[
+                    "Use existing repo patterns where possible.",
+                    "Stay within the requested scope.",
+                    "Preserve behavior outside the requested change.",
+                ],
+                output_format="List exact file paths changed and summarize each change.",
+            ),
+        )
         crew = solo_crew(builder, task, verbose=cfg.verbose)
         result = crew.kickoff()
         self.state.build_summary = str(result)
@@ -163,7 +171,14 @@ class BaseSwarmFlow(Flow[SwarmState]):
         reviewer = self._agents["reviewer"]
         task = review_task(
             reviewer,
-            f"{self._context_prompt()}{self._retrieval_prompt()}{self.state.build_summary}",
+            self._compose_phase_prompt(
+                task_text=self.state.build_summary,
+                constraints=[
+                    "Focus on correctness, regressions, and missing edge cases.",
+                    "Approve only if the code is genuinely acceptable.",
+                ],
+                output_format="Return APPROVED or a list of concrete issues with suggested fixes.",
+            ),
         )
         crew = solo_crew(reviewer, task, verbose=cfg.verbose)
         result = crew.kickoff()
@@ -189,7 +204,14 @@ class BaseSwarmFlow(Flow[SwarmState]):
         builder = self._agents[self._builder]
         task = fix_task(
             builder,
-            f"{self._context_prompt()}{self._retrieval_prompt()}{self.state.review_feedback}",
+            self._compose_phase_prompt(
+                task_text=self.state.review_feedback,
+                constraints=[
+                    "Address review findings without broad unrelated refactors.",
+                    "Keep the fix focused on the cited issues.",
+                ],
+                output_format="Summarize each fix applied and the affected file paths.",
+            ),
         )
         crew = solo_crew(builder, task, verbose=cfg.verbose)
         result = crew.kickoff()
@@ -210,7 +232,14 @@ class BaseSwarmFlow(Flow[SwarmState]):
     def _run_quality_phase(self) -> str:
         _log_phase("QUALITY GATES")
         agents = self._agents
-        summary = f"{self._context_prompt()}{self._retrieval_prompt()}{self.state.build_summary}"
+        summary = self._compose_phase_prompt(
+            task_text=self.state.build_summary,
+            constraints=[
+                "Prefer deterministic checks over guesses.",
+                "Report concrete findings or explicitly state no issues found.",
+            ],
+            output_format="Summarize findings clearly and include impacted file paths when relevant.",
+        )
 
         sec_t = security_task(agents["security"], summary)
         perf_t = performance_task(agents["performance"], summary)
@@ -230,7 +259,14 @@ class BaseSwarmFlow(Flow[SwarmState]):
     def _run_polish_phase(self) -> str:
         _log_phase("POLISH")
         agents = self._agents
-        summary = f"{self._context_prompt()}{self._retrieval_prompt()}{self.state.build_summary}"
+        summary = self._compose_phase_prompt(
+            task_text=self.state.build_summary,
+            constraints=[
+                "Do not change behavior during polish work.",
+                "Keep documentation and refactors concise and useful.",
+            ],
+            output_format="Summarize polish changes or state when no polish work was needed.",
+        )
 
         ref_t = refactor_task(agents["refactorer"], summary)
         doc_t = docs_task(agents["docs"], summary)

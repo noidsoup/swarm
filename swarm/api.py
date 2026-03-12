@@ -44,6 +44,20 @@ app.add_middleware(
 OLLAMA_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 
+def _task_response(task) -> dict:
+    payload = task.model_dump()
+    for key in (
+        "context_summary",
+        "retrieval_summary",
+        "validation_summary",
+        "eval_summary",
+        "adaptation_summary",
+        "artifacts_dir",
+    ):
+        payload.setdefault(key, "")
+    return payload
+
+
 # ---------------------------------------------------------------------------
 # Tasks
 # ---------------------------------------------------------------------------
@@ -66,7 +80,7 @@ async def list_tasks(status: Optional[str] = None):
     tasks = store.list_all()
     if status:
         tasks = [t for t in tasks if t.status == status]
-    return [t.model_dump(exclude={"log"}) for t in tasks]
+    return [{k: v for k, v in _task_response(t).items() if k != "log"} for t in tasks]
 
 
 @app.get("/tasks/{task_id}")
@@ -75,7 +89,7 @@ async def get_task(task_id: str):
     task = store.get(task_id)
     if not task:
         raise HTTPException(404, f"Task {task_id} not found")
-    return task.model_dump()
+    return _task_response(task)
 
 
 @app.get("/tasks/{task_id}/log")
