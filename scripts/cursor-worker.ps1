@@ -60,12 +60,12 @@ function Start-Worker {
 
     if ($Fast) {
         $env:SWARM_SMOKE_SKIP_LLM = "1"
-        $env:WINDOWS_CURSOR_TASK_TIMEOUT = "60"
-        $Timeout = 60
+        if (-not $env:WINDOWS_CURSOR_TASK_TIMEOUT) { $env:WINDOWS_CURSOR_TASK_TIMEOUT = "60" }
+        $Timeout = [int]$env:WINDOWS_CURSOR_TASK_TIMEOUT
     } else {
         # Real LLM run: 600s so Windows Ollama has time to finish build phase
-        $env:WINDOWS_CURSOR_TASK_TIMEOUT = "600"
-        $Timeout = 600
+        if (-not $env:WINDOWS_CURSOR_TASK_TIMEOUT) { $env:WINDOWS_CURSOR_TASK_TIMEOUT = "600" }
+        $Timeout = [int]$env:WINDOWS_CURSOR_TASK_TIMEOUT
     }
 
     Push-Location $RepoRoot

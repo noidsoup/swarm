@@ -60,6 +60,30 @@ python scripts/swarm_remote.py status <task-id>
 python scripts/swarm_remote.py log <task-id>
 ```
 
+## Daily remote workflow (Mac controls, Windows executes)
+
+Use this when your Mac is the control machine and Windows does the heavy work.
+
+**1) On Windows (after pulling latest):**
+```powershell
+cd C:\Users\<you>\repos\swarm
+.\scripts\remote-dev-windows.ps1 start-dev
+```
+
+**2) On Mac (same repo):**
+```bash
+export WINDOWS_HOST=192.168.x.x
+export WINDOWS_USER=<windows-user>
+export WINDOWS_SSH_KEY="$HOME/.ssh/id_ed25519_nopass"
+```
+
+**3) Dispatch from Mac with remote defaults:**
+```bash
+scripts/remote-dev-mac.sh dispatch "Implement feature X" --repo-path "C:/Users/<you>/repos/<target-repo>"
+```
+
+`scripts/remote-dev-mac.sh` applies remote-friendly defaults and forces `--mode cursor` for dispatch when omitted.
+
 ## Get cursor mode working (Mac → Windows)
 
 Goal: Mac dispatches a task; Windows runs the worker and LLM (Ollama), returns the result.
@@ -233,3 +257,12 @@ Creates a scheduled task `SwarmDockerComposeUp` that starts Docker Desktop and `
 - Never commit SSH keys or `.env` files (`.gitignore` blocks them)
 - `id_ed25519_nopass` is used for non-interactive agent sessions; keep it out of git
 - `administrators_authorized_keys` on Windows controls SSH access
+
+## Close-out updates (2026-03-12)
+
+- Cursor offload mode (`--mode cursor`) is confirmed functional end-to-end, but real-task latency can exceed 300-600s depending on Windows runtime/model state.
+- `WriteFile` now blocks likely destructive no-overlap rewrites for existing files by default.
+  - Override only when intentionally rewriting full files: `SWARM_ALLOW_NO_OVERLAP_REWRITE=true`.
+- For Windows troubleshooting handoff, use task IDs from `AI_SESSION_MEMORY.md` and compare:
+  - worker log: `%TEMP%\\swarm-worker.log`
+  - outbox payloads: `~/.swarm/outbox/<task_id>.json`
