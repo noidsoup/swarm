@@ -159,3 +159,43 @@ Session summaries and state for the AI Dev Swarm project.
 - [ ] Validate close-out PR merge and ensure `main` contains updated memory/runbook entries.
 - [ ] Optionally add a short pointer in `README.md` to `.cursor/rules/context7-vercel.mdc` and `.cursor/rules/orchestrator-skills.mdc`.
 - [ ] Add CI coverage (`ruff` + `pytest`) if not already active for this branch state.
+
+---
+
+## 2026-03-12 — Cross-machine cursor worker handoff
+
+**Branch:** main
+**PR:** none (direct sync to latest main)
+
+**Completed**
+- Synced latest `main` multiple times during active Windows-side development and confirmed the landed fixes are present in this Mac checkout.
+- Verified targeted tests pass for cursor transport/dispatch behavior:
+  - `python3 -m pytest tests/test_dispatch.py tests/test_cursor_worker_service.py -q`
+- Confirmed `.env` is currently ignored and not tracked in git (`git check-ignore -v .env`, `git ls-files .env` empty).
+- Ran Mac->Windows cursor smoke dispatch with extended client timeout and confirmed transport/path behavior:
+  - SSH reaches `winbox`
+  - inbox/outbox files are created and updated
+  - outbox transitions to terminal JSON
+- Verified repo-local run artifact directories exist under the smoke repo (`.swarm/runs/...`) and contain `build_phase.log` for recent runs.
+
+**Current state / in progress**
+- End-to-end cursor smoke still reaches terminal **error** due to worker runtime budget:
+  - `error: Cursor worker task timed out after 90s`
+- This is now a timeout/workload issue, not an inbox/outbox transport issue.
+
+**Key decisions (and why)**
+- Pause repeated full smoke reruns until timeout budget or smoke workload is tuned, to avoid noisy runs and duplicate diagnostics.
+- Use latest outbox JSON as the source of truth for terminal state when client-side polling takes longer.
+
+**Known risks / blockers**
+- Current 90s worker limit is too tight for some smoke runs, even after transport and artifact fixes.
+- SSH alias `winbox` currently emits `bind [127.0.0.1]:9000: Address already in use` warnings from existing tunnel forwards (non-blocking but noisy).
+
+**Latest observed outbox result**
+- `swarm-df4bda9d6028`: `status=error`, `error=Cursor worker task timed out after 90s`
+- `swarm-b8c91c8bc3b0`: `status=error`, `error=Cursor worker task timed out after 90s`
+
+**Next concrete steps**
+- [ ] Increase worker timeout for smoke runs (or reduce smoke prompt further) and rerun one Mac->Windows cursor smoke test.
+- [ ] Capture one successful terminal outbox payload (`status=complete`) from the same smoke path.
+- [ ] Optionally clean/standardize SSH tunnel behavior to remove repeated local forward bind warnings.
