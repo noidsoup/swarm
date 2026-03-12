@@ -94,7 +94,7 @@ class ContinuousImprover:
 
 def start_background_daemon(repo_path: str):
     """Start the continuous improvement daemon."""
-    from watcher import watch_repo
+    from swarm.watcher import watch_repo
 
     improver = ContinuousImprover(repo_path)
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Type
 
@@ -10,6 +9,16 @@ from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from swarm.config import cfg
+
+
+def _resolve_repo_path(path: str) -> Path:
+    base = Path(cfg.repo_root).resolve()
+    full = (base / path).resolve()
+    try:
+        full.relative_to(base)
+    except ValueError:
+        raise ValueError(f"Path escapes repo root: {path}")
+    return full
 
 
 class FileReadInput(BaseModel):
@@ -22,7 +31,10 @@ class FileReadTool(BaseTool):
     args_schema: Type[BaseModel] = FileReadInput
 
     def _run(self, path: str) -> str:
-        full = Path(cfg.repo_root) / path
+        try:
+            full = _resolve_repo_path(path)
+        except ValueError as e:
+            return f"[ERROR] {e}"
         if not full.is_file():
             return f"[ERROR] File not found: {path}"
         try:
@@ -45,7 +57,10 @@ class FileWriteTool(BaseTool):
     args_schema: Type[BaseModel] = FileWriteInput
 
     def _run(self, path: str, content: str) -> str:
-        full = Path(cfg.repo_root) / path
+        try:
+            full = _resolve_repo_path(path)
+        except ValueError as e:
+            return f"[ERROR] {e}"
         try:
             full.parent.mkdir(parents=True, exist_ok=True)
             full.write_text(content, encoding="utf-8")
@@ -68,7 +83,10 @@ class ListDirectoryTool(BaseTool):
     args_schema: Type[BaseModel] = ListDirInput
 
     def _run(self, path: str = ".", max_depth: int = 2) -> str:
-        root = Path(cfg.repo_root) / path
+        try:
+            root = _resolve_repo_path(path)
+        except ValueError as e:
+            return f"[ERROR] {e}"
         if not root.is_dir():
             return f"[ERROR] Not a directory: {path}"
         lines: list[str] = []

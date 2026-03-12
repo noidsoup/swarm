@@ -5,12 +5,14 @@ Runs as: python -m swarm.worker
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import shutil
 import subprocess
 import sys
 import time
 import traceback
+from urllib.parse import urlparse
 
 from swarm.task_models import TaskStatus, utcnow_iso
 from swarm.task_store import store
@@ -33,6 +35,7 @@ def _prepare_workspace(task_id: str, repo_url: str) -> str:
     os.makedirs(task_dir, exist_ok=True)
 
     if repo_url:
+        _validate_repo_url(repo_url)
         _log(task_id, f"Cloning {repo_url}...")
         subprocess.run(
             ["git", "clone", "--depth=1", repo_url, task_dir],
@@ -43,6 +46,42 @@ def _prepare_workspace(task_id: str, repo_url: str) -> str:
         )
         _log(task_id, "Clone complete.")
     return task_dir
+
+
+def _validate_repo_url(repo_url: str) -> None:
+    """Reject local/private clone targets and unsupported schemes."""
+    ssh_host = None
+    if repo_url.startswith("git@"):
+        ssh_host = repo_url.split("@", 1)[1].split(":", 1)[0]
+        scheme = "ssh"
+        host = ssh_host
+    else:
+        parsed = urlparse(repo_url)
+        scheme = parsed.scheme
+        host = parsed.hostname
+
+    if scheme not in {"https", "http", "ssh", "git"}:
+        raise ValueError(f"Unsupported repo URL scheme: {repo_url}")
+    if not host:
+        raise ValueError(f"Invalid repo URL: {repo_url}")
+
+    blocked_hosts = {"localhost", "127.0.0.1", "::1"}
+    if host.lower() in blocked_hosts or host.lower().endswith(".local"):
+        raise ValueError(f"Refusing local repo URL: {repo_url}")
+
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return
+
+    if (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_reserved
+        or address.is_multicast
+    ):
+        raise ValueError(f"Refusing private repo URL: {repo_url}")
 
 
 def _run_swarm(task_id: str) -> None:

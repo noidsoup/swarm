@@ -55,7 +55,22 @@ def _pick_builder(request: str) -> str:
         return "wordpress_dev"
     if any(kw in lower for kw in ("shopify", "liquid", "theme")):
         return "shopify_dev"
-    return "react_dev"
+    if any(
+        kw in lower
+        for kw in (
+            "react",
+            "next.js",
+            "nextjs",
+            "typescript",
+            "javascript",
+            "frontend",
+            "tailwind",
+            "tsx",
+            "jsx",
+        )
+    ):
+        return "react_dev"
+    return "python_dev"
 
 
 def _print_phase(name: str) -> None:
@@ -66,24 +81,25 @@ def _print_phase(name: str) -> None:
 
 
 # ===================================================================
-# WorkerSwarmFlow -- headless mode (Cursor is commander)
+# BaseSwarmFlow -- shared execution phases
 # ===================================================================
-class WorkerSwarmFlow(Flow[SwarmState]):
-    """Cursor provides the plan. Workers execute, review, and polish.
+class BaseSwarmFlow(Flow[SwarmState]):
+    """Shared swarm execution phases used by worker and standalone flows."""
 
-    Returns a structured results dict that Cursor uses to judge.
-    """
-
-    def __init__(self, plan: str, feature_request: str = "", builder_type: str = "", **kwargs):
+    def __init__(
+        self,
+        feature_request: str = "",
+        plan: str = "",
+        builder_type: str = "",
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.state.feature_request = feature_request
         self.state.plan = plan
         self._agents = build_agents()
         self._builder = builder_type or _pick_builder(feature_request or plan)
 
-    # -- BUILD --
-    @start()
-    def build_phase(self) -> str:
+    def _run_build_phase(self) -> str:
         _print_phase(f"BUILD ({self._builder})")
         builder = self._agents[self._builder]
         task = build_task(builder, self.state.plan)
@@ -93,9 +109,7 @@ class WorkerSwarmFlow(Flow[SwarmState]):
         print(f"\n[BUILD RESULT]\n{self.state.build_summary[:500]}...")
         return self.state.build_summary
 
-    # -- REVIEW LOOP --
-    @listen(build_phase)
-    def review_phase(self, _: str) -> str:
+    def _run_review_phase(self) -> str:
         _print_phase(
             f"REVIEW (iteration {self.state.review_iteration + 1}/{cfg.max_review_loops})"
         )
@@ -108,8 +122,7 @@ class WorkerSwarmFlow(Flow[SwarmState]):
         print(f"\n[REVIEW RESULT]\n{self.state.review_feedback[:500]}...")
         return self.state.review_feedback
 
-    @router(review_phase)
-    def review_router(self, _: str) -> str:
+    def _run_review_router(self) -> str:
         if "APPROVED" in self.state.review_feedback.upper():
             return "approved"
         if self.state.review_iteration >= cfg.max_review_loops:
@@ -117,8 +130,7 @@ class WorkerSwarmFlow(Flow[SwarmState]):
             return "approved"
         return "needs_fix"
 
-    @listen("needs_fix")
-    def fix_phase(self) -> str:
+    def _run_fix_phase(self) -> str:
         _print_phase(f"FIX (iteration {self.state.review_iteration})")
         builder = self._agents[self._builder]
         task = fix_task(builder, self.state.review_feedback)
@@ -127,13 +139,7 @@ class WorkerSwarmFlow(Flow[SwarmState]):
         self.state.build_summary += f"\n\n--- Fix iteration {self.state.review_iteration} ---\n{result}"
         return str(result)
 
-    @listen(fix_phase)
-    def re_review(self, fix_result: str) -> str:
-        return self.review_phase(fix_result)
-
-    # -- QUALITY GATES --
-    @listen("approved")
-    def quality_phase(self) -> str:
+    def _run_quality_phase(self) -> str:
         _print_phase("QUALITY GATES")
         agents = self._agents
         summary = self.state.build_summary
@@ -153,9 +159,7 @@ class WorkerSwarmFlow(Flow[SwarmState]):
         print(f"\n[QUALITY RESULT]\n{self.state.quality_report[:500]}...")
         return self.state.quality_report
 
-    # -- POLISH --
-    @listen(quality_phase)
-    def polish_phase(self, _: str) -> str:
+    def _run_polish_phase(self) -> str:
         _print_phase("POLISH")
         agents = self._agents
         summary = self.state.build_summary
@@ -172,6 +176,56 @@ class WorkerSwarmFlow(Flow[SwarmState]):
         self.state.polish_report = str(result)
         print(f"\n[POLISH RESULT]\n{self.state.polish_report[:500]}...")
         return self.state.polish_report
+
+
+# ===================================================================
+# WorkerSwarmFlow -- headless mode (Cursor is commander)
+# ===================================================================
+class WorkerSwarmFlow(BaseSwarmFlow):
+    """Cursor provides the plan. Workers execute, review, and polish.
+
+    Returns a structured results dict that Cursor uses to judge.
+    """
+
+    def __init__(self, plan: str, feature_request: str = "", builder_type: str = "", **kwargs):
+        super().__init__(
+            feature_request=feature_request,
+            plan=plan,
+            builder_type=builder_type,
+            **kwargs,
+        )
+
+    # -- BUILD --
+    @start()
+    def build_phase(self) -> str:
+        return self._run_build_phase()
+
+    # -- REVIEW LOOP --
+    @listen(build_phase)
+    def review_phase(self, _: str) -> str:
+        return self._run_review_phase()
+
+    @router(review_phase)
+    def review_router(self, _: str) -> str:
+        return self._run_review_router()
+
+    @listen("needs_fix")
+    def fix_phase(self) -> str:
+        return self._run_fix_phase()
+
+    @listen(fix_phase)
+    def re_review(self, fix_result: str) -> str:
+        return self.review_phase(fix_result)
+
+    # -- QUALITY GATES --
+    @listen("approved")
+    def quality_phase(self) -> str:
+        return self._run_quality_phase()
+
+    # -- POLISH --
+    @listen(quality_phase)
+    def polish_phase(self, _: str) -> str:
+        return self._run_polish_phase()
 
     # -- FINISH (return structured results to Cursor) --
     @listen(polish_phase)
@@ -195,7 +249,7 @@ class WorkerSwarmFlow(Flow[SwarmState]):
 # ===================================================================
 # FullSwarmFlow -- standalone mode (no Cursor needed)
 # ===================================================================
-class FullSwarmFlow(Flow[SwarmState]):
+class FullSwarmFlow(BaseSwarmFlow):
     """Standalone mode: all agents run locally including planning and judging.
 
     Uses the worker model for everything (no commander model needed).
@@ -203,10 +257,7 @@ class FullSwarmFlow(Flow[SwarmState]):
     """
 
     def __init__(self, feature_request: str, **kwargs):
-        super().__init__(**kwargs)
-        self.state.feature_request = feature_request
-        self._agents = build_agents()
-        self._builder = _pick_builder(feature_request)
+        super().__init__(feature_request=feature_request, **kwargs)
 
     # -- PLAN (worker model acts as architect) --
     @start()
@@ -225,48 +276,20 @@ class FullSwarmFlow(Flow[SwarmState]):
     # -- BUILD --
     @listen(planning_phase)
     def build_phase(self, _: str) -> str:
-        _print_phase(f"BUILD ({self._builder})")
-        builder = self._agents[self._builder]
-        task = build_task(builder, self.state.plan)
-        crew = solo_crew(builder, task, verbose=cfg.verbose)
-        result = crew.kickoff()
-        self.state.build_summary = str(result)
-        print(f"\n[BUILD RESULT]\n{self.state.build_summary[:500]}...")
-        return self.state.build_summary
+        return self._run_build_phase()
 
     # -- REVIEW LOOP --
     @listen(build_phase)
     def review_phase(self, _: str) -> str:
-        _print_phase(
-            f"REVIEW (iteration {self.state.review_iteration + 1}/{cfg.max_review_loops})"
-        )
-        reviewer = self._agents["reviewer"]
-        task = review_task(reviewer, self.state.build_summary)
-        crew = solo_crew(reviewer, task, verbose=cfg.verbose)
-        result = crew.kickoff()
-        self.state.review_feedback = str(result)
-        self.state.review_iteration += 1
-        print(f"\n[REVIEW RESULT]\n{self.state.review_feedback[:500]}...")
-        return self.state.review_feedback
+        return self._run_review_phase()
 
     @router(review_phase)
     def review_router(self, _: str) -> str:
-        if "APPROVED" in self.state.review_feedback.upper():
-            return "approved"
-        if self.state.review_iteration >= cfg.max_review_loops:
-            print("\n[WARN] Max review iterations reached. Proceeding anyway.")
-            return "approved"
-        return "needs_fix"
+        return self._run_review_router()
 
     @listen("needs_fix")
     def fix_phase(self) -> str:
-        _print_phase(f"FIX (iteration {self.state.review_iteration})")
-        builder = self._agents[self._builder]
-        task = fix_task(builder, self.state.review_feedback)
-        crew = solo_crew(builder, task, verbose=cfg.verbose)
-        result = crew.kickoff()
-        self.state.build_summary += f"\n\n--- Fix iteration {self.state.review_iteration} ---\n{result}"
-        return str(result)
+        return self._run_fix_phase()
 
     @listen(fix_phase)
     def re_review(self, fix_result: str) -> str:
@@ -275,44 +298,12 @@ class FullSwarmFlow(Flow[SwarmState]):
     # -- QUALITY GATES --
     @listen("approved")
     def quality_phase(self) -> str:
-        _print_phase("QUALITY GATES")
-        agents = self._agents
-        summary = self.state.build_summary
-
-        sec_t = security_task(agents["security"], summary)
-        perf_t = performance_task(agents["performance"], summary)
-        tst_t = test_task(agents["tester"], summary)
-        lnt_t = lint_task(agents["linter_agent"], summary)
-
-        crew = quality_crew(
-            agents=[agents["security"], agents["performance"], agents["tester"], agents["linter_agent"]],
-            tasks=[sec_t, perf_t, tst_t, lnt_t],
-            verbose=cfg.verbose,
-        )
-        result = crew.kickoff()
-        self.state.quality_report = str(result)
-        print(f"\n[QUALITY RESULT]\n{self.state.quality_report[:500]}...")
-        return self.state.quality_report
+        return self._run_quality_phase()
 
     # -- POLISH --
     @listen(quality_phase)
     def polish_phase(self, _: str) -> str:
-        _print_phase("POLISH")
-        agents = self._agents
-        summary = self.state.build_summary
-
-        ref_t = refactor_task(agents["refactorer"], summary)
-        doc_t = docs_task(agents["docs"], summary)
-
-        crew = quality_crew(
-            agents=[agents["refactorer"], agents["docs"]],
-            tasks=[ref_t, doc_t],
-            verbose=cfg.verbose,
-        )
-        result = crew.kickoff()
-        self.state.polish_report = str(result)
-        print(f"\n[POLISH RESULT]\n{self.state.polish_report[:500]}...")
-        return self.state.polish_report
+        return self._run_polish_phase()
 
     # -- SHIP --
     @listen(polish_phase)
@@ -327,8 +318,8 @@ class FullSwarmFlow(Flow[SwarmState]):
         slug = re.sub(r"[^a-z0-9]+", "-", self.state.feature_request.lower())[:40].strip("-")
         branch_name = f"{cfg.branch_prefix}{slug}"
 
-        _git(f"checkout -b {branch_name}")
-        _git("add -A")
+        _git(["checkout", "-b", branch_name])
+        _git(["add", "-A"])
 
         commit_msg = (
             f"feat: {self.state.feature_request}\n\n"
@@ -336,7 +327,7 @@ class FullSwarmFlow(Flow[SwarmState]):
             f"Review iterations: {self.state.review_iteration}\n"
             f"Builder: {self._builder}"
         )
-        result = _git(f'commit -m "{commit_msg}"')
+        result = _git(["commit", "-m", commit_msg])
 
         self.state.final_status = f"SHIPPED on branch {branch_name}"
         print(f"\n[SHIPPED] {result}")

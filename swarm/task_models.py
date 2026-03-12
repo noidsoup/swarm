@@ -21,7 +21,10 @@ class TaskStatus(str, Enum):
 class TaskRequest(BaseModel):
     feature: str = Field(..., description="Feature request or task description")
     plan: str = Field("", description="Optional implementation plan (markdown)")
-    builder_type: str = Field("", description="Force builder: react_dev, wordpress_dev, shopify_dev")
+    builder_type: str = Field(
+        "",
+        description="Force builder: python_dev, react_dev, wordpress_dev, shopify_dev",
+    )
     repo_url: str = Field("", description="Git repo URL to clone into workspace")
 
 

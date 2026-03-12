@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AI Dev Swarm -- run a 10-agent coding swarm.
+"""AI Dev Swarm -- run an 11-agent coding swarm.
 
 Headless mode (Cursor is commander):
     python run.py --plan plan.md "Add product filtering"
@@ -33,7 +33,7 @@ if sys.platform == "win32":
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="AI Dev Swarm -- 10-agent coding pipeline",
+        description="AI Dev Swarm -- 11-agent coding pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -49,7 +49,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--builder",
-        choices=["react_dev", "wordpress_dev", "shopify_dev"],
+        choices=["python_dev", "react_dev", "wordpress_dev", "shopify_dev"],
         help="Force a specific builder agent",
     )
     parser.add_argument(
@@ -64,8 +64,8 @@ def main() -> None:
     parser.add_argument(
         "--max-reviews",
         type=int,
-        default=3,
-        help="Max review loop iterations (default: 3)",
+        default=None,
+        help="Max review loop iterations (defaults to config value)",
     )
     parser.add_argument(
         "--dry-run",
@@ -95,7 +95,7 @@ def main() -> None:
         cfg.worker_model = args.worker_model
     if args.no_commit:
         cfg.auto_commit = False
-    if args.max_reviews:
+    if args.max_reviews is not None:
         cfg.max_review_loops = args.max_reviews
     if args.quiet:
         cfg.verbose = False
@@ -108,7 +108,7 @@ def main() -> None:
 
     banner = """
     +-----------------------------------------------------------+
-    |              AI DEV SWARM  --  10 Agent Army               |
+    |              AI DEV SWARM  --  11 Agent Army               |
     |                                                            |
     |   Builder > Reviewer > Security > Perf > Tests > Lint      |
     |   > Refactor > Docs                                        |

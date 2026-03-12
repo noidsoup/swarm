@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import shlex
 import subprocess
-from typing import Optional, Type
+from typing import Optional, Sequence, Type
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
@@ -11,11 +12,10 @@ from pydantic import BaseModel, Field
 from swarm.config import cfg
 
 
-def _git(args: str) -> str:
+def _git(args: Sequence[str]) -> str:
     try:
         result = subprocess.run(
-            f"git {args}",
-            shell=True,
+            ["git", *args],
             capture_output=True,
             text=True,
             timeout=30,
@@ -40,7 +40,7 @@ class GitStatusTool(BaseTool):
     args_schema: Type[BaseModel] = EmptyInput
 
     def _run(self) -> str:
-        return _git("status --short")
+        return _git(["status", "--short"])
 
 
 class GitDiffInput(BaseModel):
@@ -53,8 +53,10 @@ class GitDiffTool(BaseTool):
     args_schema: Type[BaseModel] = GitDiffInput
 
     def _run(self, staged: bool = False) -> str:
-        flag = "--cached" if staged else ""
-        return _git(f"diff {flag}")
+        args = ["diff"]
+        if staged:
+            args.append("--cached")
+        return _git(args)
 
 
 class GitCommitInput(BaseModel):
@@ -71,10 +73,10 @@ class GitCommitTool(BaseTool):
     args_schema: Type[BaseModel] = GitCommitInput
 
     def _run(self, message: str, files: str = ".") -> str:
-        add_result = _git(f"add {files}")
-        if "[ERROR]" in add_result:
+        add_result = _git(["add", *shlex.split(files)])
+        if "[ERROR]" in add_result or "[EXIT CODE:" in add_result:
             return add_result
-        return _git(f'commit -m "{message}"')
+        return _git(["commit", "-m", message])
 
 
 class GitBranchInput(BaseModel):
@@ -91,8 +93,8 @@ class GitBranchTool(BaseTool):
 
     def _run(self, name: Optional[str] = None) -> str:
         if name:
-            return _git(f"checkout -b {name}")
-        return _git("branch -a")
+            return _git(["checkout", "-b", name])
+        return _git(["branch", "-a"])
 
 
 class GitLogInput(BaseModel):
@@ -105,4 +107,4 @@ class GitLogTool(BaseTool):
     args_schema: Type[BaseModel] = GitLogInput
 
     def _run(self, count: int = 10) -> str:
-        return _git(f"log --oneline -n {count}")
+        return _git(["log", "--oneline", "-n", str(count)])

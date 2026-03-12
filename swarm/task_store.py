@@ -85,7 +85,8 @@ class TaskStore:
         if self._use_redis:
             return self._redis.lpop("swarm:queue")
         for tid, data in self._memory.items():
-            if data.get("status") == TaskStatus.QUEUED:
+            status = data.get("status")
+            if status in (TaskStatus.QUEUED, TaskStatus.QUEUED.value):
                 return tid
         return None
 

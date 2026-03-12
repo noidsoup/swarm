@@ -10,9 +10,9 @@ Watches the repo for changes and triggers the swarm to:
 
 from __future__ import annotations
 
+import fnmatch
 import time
-from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import defaultdict
 
 try:
@@ -25,13 +25,14 @@ except ImportError:
 class CodeChangeHandler(FileSystemEventHandler):
     """Triggers swarm on code changes."""
 
-    def __init__(self, callback, debounce_ms=2000):
+    def __init__(self, callback, patterns: list[str] | None = None, debounce_ms=2000):
         self.callback = callback
+        self.patterns = patterns or ["*"]
         self.debounce_ms = debounce_ms
         self.last_trigger = defaultdict(lambda: None)
 
     def on_modified(self, event):
-        if event.is_directory or not self._should_watch(event.src_path):
+        if event.is_directory or not self._should_watch(event.src_path, self.patterns):
             return
 
         now = datetime.now()
@@ -44,7 +45,7 @@ class CodeChangeHandler(FileSystemEventHandler):
         self.callback(event.src_path)
 
     @staticmethod
-    def _should_watch(path: str) -> bool:
+    def _should_watch(path: str, patterns: list[str]) -> bool:
         """Skip certain paths."""
         ignore = {
             "__pycache__",
@@ -55,7 +56,15 @@ class CodeChangeHandler(FileSystemEventHandler):
             ".swp",
             ".log",
         }
-        return not any(ig in path for ig in ignore)
+        if any(ig in path for ig in ignore):
+            return False
+
+        normalized = path.replace("\\", "/")
+        filename = normalized.rsplit("/", 1)[-1]
+        return any(
+            fnmatch.fnmatch(filename, pattern) or fnmatch.fnmatch(normalized, pattern)
+            for pattern in patterns
+        )
 
 
 def watch_repo(repo_path: str, callback, patterns: list[str] | None = None):
@@ -70,7 +79,7 @@ def watch_repo(repo_path: str, callback, patterns: list[str] | None = None):
         patterns = ["*.py", "*.ts", "*.tsx", "*.js", "*.jsx", "*.css"]
 
     observer = Observer()
-    handler = CodeChangeHandler(callback)
+    handler = CodeChangeHandler(callback, patterns=patterns)
     observer.schedule(handler, repo_path, recursive=True)
 
     print(f"[WATCHER] Monitoring {repo_path}")

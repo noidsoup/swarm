@@ -20,7 +20,9 @@ def quality_crew(
     tasks: list[Task],
     verbose: bool = True,
 ) -> Crew:
-    """Multi-agent crew for parallel quality gates."""
+    """Multi-agent crew with async tasks for independent checks."""
+    for task in tasks:
+        task.async_execution = True
     return Crew(
         agents=agents,
         tasks=tasks,

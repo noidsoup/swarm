@@ -1,4 +1,4 @@
-"""10 specialized worker agents -- the robot army.
+"""11 specialized worker agents -- the robot army.
 
 Architect + Judge roles are handled by Cursor AI (the commander).
 All agents here run on the free local Ollama model.
@@ -45,6 +45,19 @@ def build_agents() -> dict[str, Agent]:
 
     return {
         # -- BUILDERS --
+        "python_dev": Agent(
+            role="Python Engineer",
+            goal="Write production-quality Python applications, APIs, CLIs, and automation code.",
+            backstory=(
+                "Senior Python engineer focused on maintainable backend systems, "
+                "CLI tools, automation, and service integrations. You write clear, "
+                "well-typed code with solid error handling and tests."
+            ),
+            tools=_write_tools,
+            llm=builder_llm,
+            verbose=cfg.verbose,
+            allow_delegation=False,
+        ),
         "react_dev": Agent(
             role="React / Next.js Engineer",
             goal="Write production-quality React and Next.js code.",

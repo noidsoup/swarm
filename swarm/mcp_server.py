@@ -44,8 +44,8 @@ def run_swarm(
         plan: The implementation plan (markdown). Be specific with file
               paths and step-by-step instructions.
         feature_name: Short name for the feature (used for branch naming).
-        builder_type: Force a specific builder: "react_dev", "wordpress_dev",
-                      or "shopify_dev". Leave empty to auto-detect from plan.
+        builder_type: Force a specific builder: "python_dev", "react_dev",
+                      "wordpress_dev", or "shopify_dev". Leave empty to auto-detect from plan.
         repo_path: Absolute path to the target repo. Defaults to cwd.
 
     Returns:
@@ -111,6 +111,7 @@ def list_agents() -> str:
     what the swarm can do before calling run_swarm.
     """
     agents = [
+        {"name": "python_dev", "role": "Python Engineer", "focus": "Python apps, CLIs, APIs, automation"},
         {"name": "react_dev", "role": "React / Next.js Engineer", "focus": "React, Next.js, TypeScript, Tailwind"},
         {"name": "wordpress_dev", "role": "WordPress Engineer", "focus": "PHP, WordPress plugins, REST API"},
         {"name": "shopify_dev", "role": "Shopify Engineer", "focus": "Liquid, Theme Kit, Storefront API"},
