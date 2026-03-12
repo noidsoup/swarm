@@ -34,9 +34,17 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# CORS origins can be restricted via the CORS_ORIGINS env var (comma-separated).
+# Default allows all origins ("*"). For production, set to your frontend URL(s).
+_cors_origins_env = os.getenv("CORS_ORIGINS", "*")
+_cors_origins: list[str] = (
+    ["*"] if _cors_origins_env.strip() == "*"
+    else [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

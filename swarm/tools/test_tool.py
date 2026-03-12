@@ -32,12 +32,17 @@ class RunTestsTool(BaseTool):
         if not runner:
             return "[WARN] No test runner found. Install jest, vitest, or pytest."
 
-        name, cmd = runner
-        full_cmd = f"{cmd} {path}".strip()
+        name, cmd_parts = runner
+        args = list(cmd_parts)
+        if path:
+            resolved = self._resolve_path(path)
+            if resolved is None:
+                return f"[ERROR] Path escapes repo root: {path}"
+            args.append(resolved)
         try:
             result = subprocess.run(
-                full_cmd,
-                shell=True,
+                args,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=cfg.shell_timeout * 2,
@@ -51,14 +56,24 @@ class RunTestsTool(BaseTool):
         except Exception as e:
             return f"[ERROR] {e}"
 
-    def _detect_runner(self) -> tuple[str, str] | None:
+    def _resolve_path(self, path: str) -> str | None:
+        """Resolve path relative to repo root, rejecting traversal attempts."""
+        base = Path(cfg.repo_root).resolve()
+        full = (base / path).resolve()
+        try:
+            full.relative_to(base)
+        except ValueError:
+            return None
+        return str(full)
+
+    def _detect_runner(self) -> tuple[str, list[str]] | None:
         root = Path(cfg.repo_root)
 
         if (root / "vitest.config.ts").exists() or (root / "vitest.config.js").exists():
-            return ("vitest", "npx vitest run")
+            return ("vitest", ["npx", "vitest", "run"])
 
         if (root / "jest.config.ts").exists() or (root / "jest.config.js").exists():
-            return ("jest", "npx jest")
+            return ("jest", ["npx", "jest"])
 
         pkg = root / "package.json"
         if pkg.exists():
@@ -67,13 +82,13 @@ class RunTestsTool(BaseTool):
             try:
                 data = json.loads(pkg.read_text())
                 if "jest" in data.get("devDependencies", {}):
-                    return ("jest", "npx jest")
+                    return ("jest", ["npx", "jest"])
                 if "scripts" in data and "test" in data["scripts"]:
-                    return ("npm test", "npm test --")
+                    return ("npm test", ["npm", "test", "--"])
             except Exception:
                 pass
 
         if (root / "pytest.ini").exists() or (root / "pyproject.toml").exists():
-            return ("pytest", "pytest")
+            return ("pytest", ["pytest"])
 
         return None
