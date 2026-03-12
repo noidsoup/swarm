@@ -63,12 +63,12 @@ class CursorWorkerClient:
 
     def _ensure_remote_dirs(self) -> None:
         py = (
-            "from pathlib import Path;"
-            "root=Path('~/.swarm').expanduser();"
+            "from pathlib import Path; import sys;"
+            "root=Path(sys.argv[1]).expanduser();"
             "(root/'inbox').mkdir(parents=True, exist_ok=True);"
             "(root/'outbox').mkdir(parents=True, exist_ok=True)"
         )
-        self._run_ssh(f'python -c "{py}"', timeout=30)
+        self._run_ssh(f'python -c "{py}" "{self.remote_root}"', timeout=30)
 
     def _upload_task(self, task_id: str, envelope: dict[str, Any]) -> None:
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as tmp:
