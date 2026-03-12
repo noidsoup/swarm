@@ -72,6 +72,18 @@ python scripts/swarm_remote.py log <task-id>
   - `next-upgrade` for migrations
 - Vercel deployment requests should use `vercel-deploy` and default to preview deploys.
 
+## Orchestrator-skill workflow
+
+- For orchestration internals (`swarm/flow.py`, `swarm/worker.py`, `swarm/task_store.py`, `swarm/task_models.py`), apply:
+  - `python-error-handling`
+  - `python-resilience`
+  - `python-observability`
+  - `python-performance-optimization` when throughput/latency is part of the request
+- For `tests/**` changes, apply `python-testing-patterns`.
+- For MCP surface changes (`swarm/mcp_server.py`, `swarm/tools/**`), apply `mcp-builder`.
+- For API design/contract changes in `swarm/api.py`, apply `api-design-principles`.
+- For CI workflow edits (`.github/workflows/**`), apply `github-actions-templates`.
+
 ## Testing
 
 ```bash

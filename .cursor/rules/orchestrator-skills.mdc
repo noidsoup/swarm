@@ -1,0 +1,33 @@
+---
+description: Route swarm orchestrator work to Python, MCP, API, and CI skills
+alwaysApply: true
+---
+
+# Orchestrator Skill Routing
+
+Use these skills by default when editing the swarm orchestrator codebase.
+
+## Core orchestration (`swarm/flow.py`, `swarm/worker.py`, `swarm/task_store.py`, `swarm/task_models.py`)
+
+- `python-error-handling`
+- `python-resilience`
+- `python-observability`
+- `python-performance-optimization` (when throughput or latency is part of the task)
+
+## Tests and behavior locks (`tests/**`)
+
+- `python-testing-patterns`
+
+## MCP and tool contracts (`swarm/mcp_server.py`, `swarm/tools/**`)
+
+- `mcp-builder`
+
+## API contracts and request/response design (`swarm/api.py`)
+
+- `api-design-principles`
+
+## CI/CD workflow changes (`.github/workflows/**`)
+
+- `github-actions-templates`
+
+Prefer deterministic pipeline behavior (`BUILD -> REVIEW LOOP -> QUALITY -> POLISH`) and preserve in-memory fallback behavior when queue/worker code changes.

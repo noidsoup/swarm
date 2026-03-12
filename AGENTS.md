@@ -39,6 +39,18 @@
   - `next-upgrade` (for migrations)
 - For deployment requests targeting Vercel, use `vercel-deploy` and default to preview deploys unless production is explicitly requested.
 
+## Orchestrator Skill Defaults
+
+- For `swarm/flow.py`, `swarm/worker.py`, task store/models, and queue behavior changes, apply:
+  - `python-error-handling`
+  - `python-resilience`
+  - `python-observability`
+  - `python-performance-optimization` when performance is in scope
+- For `tests/**` updates, apply `python-testing-patterns`.
+- For `swarm/mcp_server.py` and `swarm/tools/**`, apply `mcp-builder`.
+- For `swarm/api.py` contract changes, apply `api-design-principles`.
+- For `.github/workflows/**`, apply `github-actions-templates`.
+
 ## Change Guidelines
 
 - Keep the flow pipeline deterministic: BUILD -> REVIEW LOOP -> QUALITY -> POLISH
