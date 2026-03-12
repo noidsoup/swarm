@@ -528,3 +528,32 @@ Replace IP/username/key path if different. Expect `"status": "complete"` and a r
 - [ ] **Optional — experimental follow-ups:** lesson decay/resurrection, known failure playbook, per-repo scar tissue map, strategy mutation sandbox (start from `swarm/evals.py`, `swarm/adaptation.py`, then `swarm/worker.py`).
 - [ ] **Optional — plan items:** smoke prompt normalizer (already in dispatch), cursor worker tests, full local `dispatch --mode cursor` validation.
 - [ ] Run `python simplemem_cli.py next-steps` anytime to resurface these steps.
+
+---
+
+## 2026-03-12 — Validation gate follow-up and merge request
+
+**Branch:** `chore/memory-merge-2026-03-12`  
+**PR:** pending creation from this branch
+
+**Completed**
+- Confirmed user-run Mac dispatch reached Windows worker but ended with terminal timeout at 600s (`task_id=swarm-a5d5818f7be5`).
+- Confirmed target file was not destructively replaced in that run (`app.py` remained intact post-check).
+- Applied worker helper fix so `scripts/cursor-worker.ps1` respects pre-set `WINDOWS_CURSOR_TASK_TIMEOUT` instead of always forcing 600s in normal mode.
+
+**Current state / in progress**
+- Offload transport is functional (Mac->Windows cursor path), but runtime budget/model latency remains the reliability bottleneck.
+- User requested memory update and merge completion; this entry captures the latest checkpoint before PR merge.
+
+**Key decisions (and why)**
+- Keep `--mode cursor` as the primary path to match the "Mac controls, Windows executes" operating model.
+- Prefer explicit high timeout on Windows worker for real tasks to avoid false negatives from default runtime caps.
+
+**Known risks / blockers**
+- Real task completion time can still exceed timeout due to model cold-start/runtime variance.
+- A smoke repo with non-representative content can make append/guard validation results harder to interpret.
+
+**Next concrete steps**
+- [ ] On Windows, set `WINDOWS_CURSOR_TASK_TIMEOUT=1800`, restart worker, and rerun one tiny real append task.
+- [ ] If timeout persists, inspect `%TEMP%\\swarm-worker.log` and adjust model/keep-alive settings.
+- [ ] Keep using fast smoke only for transport checks; use real tiny edits for behavior validation.
