@@ -11,6 +11,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 from typing import Any
 
 from swarm.task_models import new_task_id, utcnow_iso
@@ -333,9 +334,11 @@ class CursorWorkerService:
             }
         elif error_holder:
             exc = next(iter(error_holder.values()))
+            tb = traceback.format_exc()
             result = {
                 "status": "error",
                 "error": str(exc),
+                "traceback": tb,
                 "build_summary": "",
                 "review_feedback": "",
                 "quality_report": "",
