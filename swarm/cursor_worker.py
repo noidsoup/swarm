@@ -417,6 +417,7 @@ class CursorWorkerService:
         try:
             sub_env = {k: v for k, v in os.environ.items() if k != "SWARM_DAEMON_LOG_FILE"}
             sub_env["SWARM_VERBOSE"] = "0"  # Disable CrewAI Rich output to avoid closed-file writes
+            sub_env.setdefault("PYTHONIOENCODING", "utf-8")  # Fix Windows charmap/emoji encoding errors
             proc = subprocess.run(
                 [sys.executable, str(run_script), payload_path, result_path],
                 cwd=str(script_dir),
