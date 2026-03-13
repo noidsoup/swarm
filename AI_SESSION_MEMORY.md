@@ -558,3 +558,32 @@ Replace IP/username/key path if different. Expect `"status": "complete"` and a r
 - [ ] If timeout persists, inspect `%TEMP%\\swarm-worker.log` and adjust model/keep-alive settings.
 - [ ] Keep using fast smoke only for transport checks; use real tiny edits for behavior validation.
 - [ ] Backlog: add Tailscale-based connectivity so Mac can offload to Windows when not on the same local network.
+
+---
+
+## 2026-03-12 — Async cursor handoff plan for Windows execution
+
+**Branch:** `main`
+
+**Completed**
+- Reverted local in-progress implementation edits so this checkpoint is planning-only.
+- Wrote a concrete handoff plan for async submit + track flow in `ASYNC_CURSOR_HANDOFF_PLAN.md`.
+- Captured exact implementation direction requested by user: `dispatch --async`, non-blocking cursor submit, optional blocking behavior, and reuse of existing `status/logs/cancel` tracking flows.
+
+**Current state / in progress**
+- No code behavior changes are applied in this checkpoint.
+- Plan is ready for Windows worker execution against the repo.
+
+**Key decisions (and why)**
+- Keep blocking dispatch as default to avoid breaking existing scripts and workflows.
+- Add async behavior only behind explicit `--async` opt-in for predictable migration.
+- Reuse existing task tracking interfaces rather than introducing new API surface.
+
+**Known risks / blockers**
+- CLI async behavior in non-cursor modes needs clear guardrails (warn vs validation error) to avoid user confusion.
+- Lint tool availability may differ by environment; use project-standard invocation on worker host.
+
+**Next concrete steps**
+- [ ] Implement the plan from `ASYNC_CURSOR_HANDOFF_PLAN.md` on Windows.
+- [ ] Run targeted tests for `cursor_worker` and `dispatch` plus any CLI tests.
+- [ ] Validate acceptance criteria with a real `--mode cursor --async` run and follow-up status/log polling.
