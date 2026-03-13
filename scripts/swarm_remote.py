@@ -26,6 +26,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -40,14 +41,14 @@ except ImportError:
 try:
     from rich.console import Console
     from rich.table import Table
-    from rich import print as rprint
     HAS_RICH = True
 except ImportError:
     HAS_RICH = False
 
-from swarm.config import cfg
-from swarm.dispatch import Dispatcher
-from swarm.projects import ProjectRegistry, spawn_project_from_template
+from swarm.config import cfg  # noqa: E402
+from swarm.cursor_worker import CursorWorkerClient  # noqa: E402
+from swarm.dispatch import Dispatcher  # noqa: E402
+from swarm.projects import ProjectRegistry, spawn_project_from_template  # noqa: E402
 
 SWARM_URL = os.getenv("SWARM_URL", "http://localhost:9000")
 TIMEOUT = 30
@@ -76,6 +77,13 @@ def _delete(path: str):
     return resp.json()
 
 
+def _cursor_client_or_none() -> CursorWorkerClient | None:
+    dispatcher = Dispatcher(cfg)
+    if not dispatcher.connection.enabled():
+        return None
+    return CursorWorkerClient(dispatcher.connection)
+
+
 def cmd_submit(args):
     plan = ""
     if args.plan:
@@ -91,7 +99,7 @@ def cmd_submit(args):
     result = _post("/tasks", data)
     print(f"Task submitted: {result['task_id']}")
     print(f"Status: {result['status']}")
-    print(f"\nTrack it:")
+    print("\nTrack it:")
     print(f"  swarm-remote status {result['task_id']}")
     print(f"  swarm-remote logs {result['task_id']}")
 
@@ -102,6 +110,16 @@ def cmd_dispatch(args):
         with open(args.plan, encoding="utf-8") as f:
             plan = f.read()
 
+    mode = (args.mode or cfg.default_execution_mode).strip().lower()
+    wait_for_completion = True
+    if mode == "cursor":
+        # Async-first for cursor mode; use --wait to keep prior blocking behavior.
+        wait_for_completion = bool(args.wait)
+        if args.async_dispatch:
+            print("Note: --async is accepted for compatibility. Cursor dispatch is already async by default.")
+    elif args.async_dispatch:
+        raise SystemExit("--async is only supported with --mode cursor")
+
     dispatcher = Dispatcher(cfg)
     result = dispatcher.dispatch(
         plan=plan or args.feature,
@@ -110,14 +128,31 @@ def cmd_dispatch(args):
         repo_path=args.repo_path or "",
         repo_url=args.repo_url or "",
         execution_mode=args.mode or "",
+        wait_for_completion=wait_for_completion,
     )
     print(json.dumps(result, indent=2))
+    if mode == "cursor" and not wait_for_completion:
+        task_id = result.get("task_id", "")
+        if task_id:
+            print("\nTrack it:")
+            print(f"  swarm-remote status {task_id}")
+            print(f"  swarm-remote logs {task_id}")
+            print(f"  swarm-remote cancel {task_id}")
 
 
 def cmd_status(args):
     if args.task_id:
-        task = _get(f"/tasks/{args.task_id}")
-        print(json.dumps(task, indent=2))
+        try:
+            task = _get(f"/tasks/{args.task_id}")
+            print(json.dumps(task, indent=2))
+            return
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 404:
+                raise
+        client = _cursor_client_or_none()
+        if client is None:
+            raise SystemExit("Task not found via API and cursor host/user are not configured.")
+        print(json.dumps(client.get_status(args.task_id), indent=2))
     else:
         tasks = _get("/tasks")
         if not tasks:
@@ -156,6 +191,7 @@ def cmd_logs(args):
     print(f"Streaming logs for {args.task_id}...\n")
     try:
         with httpx.stream("GET", url, timeout=None) as resp:
+            resp.raise_for_status()
             for line in resp.iter_lines():
                 if line.startswith("data: "):
                     data = line[6:]
@@ -167,13 +203,42 @@ def cmd_logs(args):
                     except json.JSONDecodeError:
                         pass
                     print(data)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != 404:
+            raise
+        client = _cursor_client_or_none()
+        if client is None:
+            raise SystemExit("Task not found via API and cursor host/user are not configured.")
+        print("API logs unavailable for this task. Polling cursor worker status/outbox...\n")
+        timeout_seconds = int(os.getenv("WINDOWS_CURSOR_TIMEOUT", "7200"))
+        deadline = time.time() + timeout_seconds
+        last_status = ""
+        while time.time() < deadline:
+            payload = client.get_status(args.task_id)
+            status = str(payload.get("status", "")).lower()
+            if status != last_status:
+                print(json.dumps(payload, indent=2))
+                last_status = status
+            if status in {"complete", "completed", "error", "failed", "cancelled", "not_found"}:
+                break
+            time.sleep(2)
     except KeyboardInterrupt:
         print("\nStopped streaming.")
 
 
 def cmd_cancel(args):
-    result = _delete(f"/tasks/{args.task_id}")
-    print(result.get("message", result))
+    try:
+        result = _delete(f"/tasks/{args.task_id}")
+        print(result.get("message", result))
+        return
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != 404:
+            raise
+    client = _cursor_client_or_none()
+    if client is None:
+        raise SystemExit("Task not found via API and cursor host/user are not configured.")
+    result = client.cancel(args.task_id)
+    print(json.dumps(result, indent=2))
 
 
 def cmd_health(_args):
@@ -266,6 +331,13 @@ def main():
     p_dispatch.add_argument("--repo-path", help="Local repo path for local/cursor mode")
     p_dispatch.add_argument("--repo-url", help="Git repo URL for remote ollama mode")
     p_dispatch.add_argument("--mode", choices=["local", "ollama", "cursor"], help="Execution mode")
+    p_dispatch.add_argument("--wait", action="store_true", help="Wait for completion in cursor mode")
+    p_dispatch.add_argument(
+        "--async",
+        dest="async_dispatch",
+        action="store_true",
+        help="Compatibility alias for cursor async dispatch (async is default in cursor mode).",
+    )
     p_dispatch.set_defaults(func=cmd_dispatch)
 
     # status

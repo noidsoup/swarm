@@ -23,7 +23,7 @@ class CursorWorkerClient:
         self.connection = connection
         self.remote_root = os.getenv("WINDOWS_CURSOR_QUEUE_ROOT", "~/.swarm")
 
-    def submit_and_wait(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def submit(self, payload: dict[str, Any]) -> str:
         task_id = new_task_id()
         envelope = {
             "task_id": task_id,
@@ -37,7 +37,14 @@ class CursorWorkerClient:
         }
         self._ensure_remote_dirs()
         self._upload_task(task_id, envelope)
+        return task_id
+
+    def wait(self, task_id: str) -> dict[str, Any]:
         return self._poll_result(task_id)
+
+    def submit_and_wait(self, payload: dict[str, Any]) -> dict[str, Any]:
+        task_id = self.submit(payload)
+        return self.wait(task_id)
 
     def _ssh_base(self) -> list[str]:
         cmd = ["ssh"]
@@ -89,6 +96,106 @@ class CursorWorkerClient:
             except OSError:
                 pass
 
+    def _remote_file_exists(self, path: str) -> bool:
+        py = (
+            "from pathlib import Path; import sys;"
+            "p=Path(sys.argv[1]).expanduser();"
+            "print('1' if p.exists() else '0')"
+        )
+        proc = self._run_ssh(f'python -c "{py}" "{path}"', timeout=30)
+        return proc.stdout.strip() == "1"
+
+    def _read_remote_json(self, path: str) -> dict[str, Any] | None:
+        py = (
+            "from pathlib import Path; import sys;"
+            "p=Path(sys.argv[1]).expanduser();"
+            "print(p.read_text(encoding='utf-8') if p.exists() else '')"
+        )
+        proc = self._run_ssh(f'python -c "{py}" "{path}"', timeout=30)
+        body = proc.stdout.strip()
+        if not body:
+            return None
+        return json.loads(body)
+
+    @staticmethod
+    def _is_terminal_status(status: str) -> bool:
+        return status.lower() in {"complete", "completed", "error", "failed", "cancelled"}
+
+    def get_result(self, task_id: str) -> dict[str, Any] | None:
+        outbox_path = f"{self.remote_root}/outbox/{task_id}.json"
+        result = self._read_remote_json(outbox_path)
+        if result is None:
+            return None
+        result.setdefault("execution_mode", "cursor")
+        return result
+
+    def get_status(self, task_id: str) -> dict[str, Any]:
+        result = self.get_result(task_id)
+        if result is not None:
+            status = str(result.get("status", "")).lower()
+            if not status:
+                status = "running"
+            result["status"] = status
+            return result
+
+        inbox_path = f"{self.remote_root}/inbox/{task_id}.json"
+        if self._remote_file_exists(inbox_path):
+            return {
+                "status": "queued",
+                "task_id": task_id,
+                "execution_mode": "cursor",
+            }
+        return {
+            "status": "not_found",
+            "task_id": task_id,
+            "execution_mode": "cursor",
+        }
+
+    def cancel(self, task_id: str) -> dict[str, Any]:
+        status_payload = self.get_status(task_id)
+        status = str(status_payload.get("status", "")).lower()
+        if status == "queued":
+            py = (
+                "from pathlib import Path; import json, sys, datetime;"
+                "root=Path(sys.argv[1]).expanduser();"
+                "task_id=sys.argv[2];"
+                "inbox=root/'inbox'/f'{task_id}.json';"
+                "outbox=root/'outbox'/f'{task_id}.json';"
+                "if inbox.exists(): inbox.unlink();"
+                "now=datetime.datetime.now(datetime.timezone.utc).isoformat();"
+                "payload={'status':'cancelled','task_id':task_id,'execution_mode':'cursor',"
+                "'error':'Cancelled before execution','started_at':now,'completed_at':now};"
+                "outbox.parent.mkdir(parents=True, exist_ok=True);"
+                "outbox.write_text(json.dumps(payload, indent=2), encoding='utf-8');"
+            )
+            self._run_ssh(f'python -c "{py}" "{self.remote_root}" "{task_id}"', timeout=30)
+            return {
+                "status": "cancelled",
+                "task_id": task_id,
+                "execution_mode": "cursor",
+                "message": "Cancelled before execution.",
+            }
+        if status == "running":
+            return {
+                "status": "cancel_requested",
+                "task_id": task_id,
+                "execution_mode": "cursor",
+                "message": "Task is already running; cooperative cancellation is not yet supported.",
+            }
+        if self._is_terminal_status(status):
+            return {
+                "status": "already_finished",
+                "task_id": task_id,
+                "execution_mode": "cursor",
+                "result": status_payload,
+            }
+        return {
+            "status": "not_found",
+            "task_id": task_id,
+            "execution_mode": "cursor",
+            "message": "Task not found in cursor inbox/outbox.",
+        }
+
     def _poll_result(self, task_id: str) -> dict[str, Any]:
         timeout_seconds = int(os.getenv("WINDOWS_CURSOR_TIMEOUT", "7200"))
         heartbeat_grace_seconds = float(
@@ -97,28 +204,21 @@ class CursorWorkerClient:
         deadline = time.time() + timeout_seconds
         last_progress_ts = time.time()
         last_heartbeat = ""
+        seen_running_output = False
         while time.time() < deadline:
-            outbox_path = f"{self.remote_root}/outbox/{task_id}.json"
-            py = (
-                "from pathlib import Path; import sys;"
-                "p=Path(sys.argv[1]).expanduser();"
-                "print(p.read_text(encoding='utf-8') if p.exists() else '')"
-            )
-            proc = self._run_ssh(f'python -c "{py}" "{outbox_path}"', timeout=30)
-            body = proc.stdout.strip()
-            if body:
-                result = json.loads(body)
-                result.setdefault("execution_mode", "cursor")
+            result = self.get_result(task_id)
+            if result:
                 status = str(result.get("status", "")).lower()
-                if status in {"complete", "completed", "error", "failed", "cancelled"}:
+                if self._is_terminal_status(status):
                     return result
 
+                seen_running_output = True
                 heartbeat = str(result.get("heartbeat_at", "") or result.get("started_at", ""))
                 if heartbeat and heartbeat != last_heartbeat:
                     last_heartbeat = heartbeat
                     last_progress_ts = time.time()
                     deadline = time.time() + timeout_seconds
-            elif time.time() - last_progress_ts > heartbeat_grace_seconds:
+            elif seen_running_output and time.time() - last_progress_ts > heartbeat_grace_seconds:
                 raise TimeoutError(f"Cursor worker heartbeat stalled for task: {task_id}")
             time.sleep(5)
         raise TimeoutError(f"Timed out waiting for Cursor worker result: {task_id}")

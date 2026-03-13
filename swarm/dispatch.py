@@ -49,6 +49,7 @@ class Dispatcher:
         repo_path: str = "",
         repo_url: str = "",
         execution_mode: str = "",
+        wait_for_completion: bool = True,
     ) -> dict[str, Any]:
         mode = (execution_mode or getattr(self.cfg, "default_execution_mode", "local")).strip().lower()
         if mode not in {"local", "ollama", "cursor"}:
@@ -74,6 +75,7 @@ class Dispatcher:
             builder_type=builder_type,
             repo_path=repo_path,
             repo_url=repo_url,
+            wait_for_completion=wait_for_completion,
         )
 
     def _dispatch_local(
@@ -184,6 +186,7 @@ class Dispatcher:
         builder_type: str,
         repo_path: str,
         repo_url: str,
+        wait_for_completion: bool = True,
     ) -> dict[str, Any]:
         if not self.connection.enabled():
             raise ValueError("WINDOWS_HOST and WINDOWS_USER are required for cursor mode")
@@ -195,7 +198,17 @@ class Dispatcher:
             "repo_path": repo_path,
             "repo_url": repo_url,
         }
-        return client.submit_and_wait(task_payload)
+        if wait_for_completion:
+            return client.submit_and_wait(task_payload)
+        task_id = client.submit(task_payload)
+        return {
+            "status": "queued",
+            "task_id": task_id,
+            "execution_mode": "cursor",
+            "feature_name": feature_name,
+            "builder_type": builder_type or "auto",
+            "submitted_at": utcnow_iso(),
+        }
 
 
 @contextmanager

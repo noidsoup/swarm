@@ -107,6 +107,22 @@ Then dispatch from Mac:
 WINDOWS_CURSOR_TIMEOUT=900 WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=180 WINDOWS_SSH_KEY="$HOME/.ssh/id_ed25519_nopass" WINDOWS_HOST=<windows-ip> WINDOWS_USER=<windows-user> python3 scripts/swarm_remote.py dispatch "<task prompt>" --mode cursor --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"
 ```
 
+Cursor-mode dispatch is async-first by default:
+
+- Default (recommended): returns quickly with `task_id`
+- Blocking mode: add `--wait`
+- Compatibility: `--async` is accepted but not required for cursor mode
+
+Examples:
+
+```bash
+# async-first (default)
+python3 scripts/swarm_remote.py dispatch "Add a tiny append-only note to README" --mode cursor --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"
+
+# blocking until completion
+python3 scripts/swarm_remote.py dispatch "Add a tiny append-only note to README" --mode cursor --wait --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"
+```
+
 ### Detailed Windows operator instructions (copy/paste)
 
 Use this full sequence when you want Windows to be the execution machine and avoid stale worker state.

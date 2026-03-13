@@ -196,6 +196,90 @@ def test_cursor_worker_client_waits_for_terminal_result(monkeypatch) -> None:
     assert result["execution_mode"] == "cursor"
 
 
+def test_cursor_worker_client_submit_returns_task_id_and_uploads(monkeypatch) -> None:
+    client = CursorWorkerClient(SimpleNamespace(user="nicho", host="127.0.0.1", ssh_key_path=""))
+    seen: dict[str, object] = {}
+
+    monkeypatch.setattr("swarm.cursor_worker.new_task_id", lambda: "swarm-submit123")
+    monkeypatch.setattr(client, "_ensure_remote_dirs", lambda: seen.setdefault("ensured", True))
+
+    def capture_upload(task_id: str, envelope: dict[str, object]) -> None:
+        seen["task_id"] = task_id
+        seen["envelope"] = envelope
+
+    monkeypatch.setattr(client, "_upload_task", capture_upload)
+    task_id = client.submit({"plan": "Demo", "feature_name": "feat"})
+
+    assert task_id == "swarm-submit123"
+    assert seen["task_id"] == "swarm-submit123"
+    assert seen["ensured"] is True
+    envelope = seen["envelope"]
+    assert isinstance(envelope, dict)
+    assert envelope["plan"] == "Demo"
+    assert envelope["feature_name"] == "feat"
+
+
+def test_cursor_worker_client_submit_and_wait_uses_submit_then_wait(monkeypatch) -> None:
+    client = CursorWorkerClient(SimpleNamespace(user="nicho", host="127.0.0.1", ssh_key_path=""))
+    calls: list[str] = []
+
+    def fake_submit(payload: dict[str, object]) -> str:
+        calls.append("submit")
+        return "swarm-submitwait"
+
+    def fake_wait(task_id: str) -> dict[str, object]:
+        calls.append(f"wait:{task_id}")
+        return {"status": "complete", "task_id": task_id}
+
+    monkeypatch.setattr(client, "submit", fake_submit)
+    monkeypatch.setattr(client, "wait", fake_wait)
+
+    result = client.submit_and_wait({"plan": "demo"})
+    assert result["status"] == "complete"
+    assert calls == ["submit", "wait:swarm-submitwait"]
+
+
+def test_cursor_worker_client_get_status_reports_queued(monkeypatch) -> None:
+    client = CursorWorkerClient(SimpleNamespace(user="nicho", host="127.0.0.1", ssh_key_path=""))
+    monkeypatch.setattr(client, "get_result", lambda task_id: None)
+    monkeypatch.setattr(client, "_remote_file_exists", lambda path: path.endswith("/inbox/swarm-q.json"))
+
+    status = client.get_status("swarm-q")
+    assert status["status"] == "queued"
+    assert status["task_id"] == "swarm-q"
+
+
+def test_cursor_worker_client_cancel_queued_writes_cancelled_result(monkeypatch) -> None:
+    client = CursorWorkerClient(SimpleNamespace(user="nicho", host="127.0.0.1", ssh_key_path=""))
+    monkeypatch.setattr(
+        client,
+        "get_status",
+        lambda task_id: {"status": "queued", "task_id": task_id, "execution_mode": "cursor"},
+    )
+    monkeypatch.setattr(
+        client,
+        "_run_ssh",
+        lambda remote_cmd, timeout=30: subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+    )
+    result = client.cancel("swarm-cancel1")
+
+    assert result["status"] == "cancelled"
+    assert result["task_id"] == "swarm-cancel1"
+
+
+def test_cursor_worker_client_cancel_running_returns_cancel_requested(monkeypatch) -> None:
+    client = CursorWorkerClient(SimpleNamespace(user="nicho", host="127.0.0.1", ssh_key_path=""))
+    monkeypatch.setattr(
+        client,
+        "get_status",
+        lambda task_id: {"status": "running", "task_id": task_id, "execution_mode": "cursor"},
+    )
+    result = client.cancel("swarm-run1")
+
+    assert result["status"] == "cancel_requested"
+    assert result["task_id"] == "swarm-run1"
+
+
 def test_build_cursor_worker_daemon_command_includes_runtime_options(tmp_path: Path) -> None:
     command = build_cursor_worker_daemon_command(
         script_path=tmp_path / "scripts" / "cursor_worker.py",

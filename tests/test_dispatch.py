@@ -172,3 +172,68 @@ def test_dispatch_local_sets_run_artifacts_dir_under_repo(tmp_path: Path, monkey
     assert observed["run_artifacts_dir"]
     assert Path(observed["run_artifacts_dir"]).is_dir()
     assert Path(observed["run_artifacts_dir"]).parent == tmp_path / ".swarm" / "runs"
+
+
+def test_dispatch_cursor_wait_false_returns_queued_payload(monkeypatch) -> None:
+    class FakeClient:
+        def __init__(self, connection) -> None:
+            self.connection = connection
+
+        def submit(self, payload: dict) -> str:
+            assert payload["feature_name"] == "demo"
+            return "swarm-queued123"
+
+    monkeypatch.setattr("swarm.dispatch.CursorWorkerClient", FakeClient)
+    cfg = SimpleNamespace(
+        default_execution_mode="cursor",
+        windows_host="192.168.0.2",
+        windows_user="nicho",
+        windows_ssh_key="",
+        windows_swarm_api="http://localhost:9000",
+        windows_cursor_workspace="",
+    )
+    dispatcher = Dispatcher(cfg)
+
+    result = dispatcher.dispatch(
+        plan="Do thing",
+        feature_name="demo",
+        builder_type="python_dev",
+        execution_mode="cursor",
+        wait_for_completion=False,
+    )
+
+    assert result["status"] == "queued"
+    assert result["task_id"] == "swarm-queued123"
+    assert result["execution_mode"] == "cursor"
+
+
+def test_dispatch_cursor_wait_true_uses_blocking_submit_and_wait(monkeypatch) -> None:
+    class FakeClient:
+        def __init__(self, connection) -> None:
+            self.connection = connection
+
+        def submit_and_wait(self, payload: dict) -> dict:
+            assert payload["feature_name"] == "demo"
+            return {"status": "complete", "task_id": "swarm-done", "execution_mode": "cursor"}
+
+    monkeypatch.setattr("swarm.dispatch.CursorWorkerClient", FakeClient)
+    cfg = SimpleNamespace(
+        default_execution_mode="cursor",
+        windows_host="192.168.0.2",
+        windows_user="nicho",
+        windows_ssh_key="",
+        windows_swarm_api="http://localhost:9000",
+        windows_cursor_workspace="",
+    )
+    dispatcher = Dispatcher(cfg)
+
+    result = dispatcher.dispatch(
+        plan="Do thing",
+        feature_name="demo",
+        builder_type="python_dev",
+        execution_mode="cursor",
+        wait_for_completion=True,
+    )
+
+    assert result["status"] == "complete"
+    assert result["task_id"] == "swarm-done"
