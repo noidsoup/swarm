@@ -8,6 +8,17 @@ import os
 from pathlib import Path
 import sys
 
+# Redirect stdout/stderr BEFORE any imports so CrewAI/Flow see the correct stream.
+# On Windows daemon child, parent passes log path via env; child opens it so stdout/stderr
+# stay valid after parent exits (avoids "I/O operation on closed file").
+_log_file = None
+_log_path = os.getenv("SWARM_DAEMON_LOG_FILE")
+if _log_path:
+    Path(_log_path).parent.mkdir(parents=True, exist_ok=True)
+    _log_file = open(_log_path, "a", encoding="utf-8")
+    sys.stdout = _log_file
+    sys.stderr = _log_file
+
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -16,15 +27,7 @@ from swarm.cursor_worker import CursorWorkerService, spawn_cursor_worker_daemon
 
 
 def main() -> None:
-    # On Windows daemon child, parent passes log path via env; child opens it so stdout/stderr
-    # stay valid after parent exits (avoids "I/O operation on closed file").
-    log_path = os.getenv("SWARM_DAEMON_LOG_FILE")
-    if log_path:
-        log_file = open(log_path, "a", encoding="utf-8")
-        sys.stdout = log_file
-        sys.stderr = log_file
-
-    if not log_path:
+    if not _log_path:
         if hasattr(sys.stdout, "reconfigure"):
             sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         if hasattr(sys.stderr, "reconfigure"):
