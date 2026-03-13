@@ -127,7 +127,7 @@ def cmd_dispatch(args):
         builder_type=args.builder or "",
         repo_path=args.repo_path or "",
         repo_url=args.repo_url or "",
-        execution_mode=args.mode or "",
+        execution_mode=mode,
         wait_for_completion=wait_for_completion,
     )
     print(json.dumps(result, indent=2))
