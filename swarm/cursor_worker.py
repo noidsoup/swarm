@@ -408,12 +408,14 @@ class CursorWorkerService:
         if not run_script.exists():
             raise RuntimeError(f"Dispatch subprocess script not found: {run_script}")
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False, encoding="utf-8"
-        ) as p:
-            json.dump(payload, p, indent=2)
-            payload_path = p.name
-        result_path = payload_path + ".result"
+        # Use swarm repo's .swarm/worker/ for payload (not system temp) to avoid Windows
+        # PermissionError when system temp overlaps with queue ~/.swarm (e.g. inbox).
+        payload_dir = script_dir / ".swarm" / "worker"
+        payload_dir.mkdir(parents=True, exist_ok=True)
+        task_id = str(payload.get("task_id") or new_task_id())
+        payload_path = payload_dir / f"payload-{task_id}.json"
+        payload_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        result_path = payload_path.with_suffix(".json.result")
         try:
             sub_env = {k: v for k, v in os.environ.items() if k != "SWARM_DAEMON_LOG_FILE"}
             sub_env["SWARM_VERBOSE"] = "0"  # Disable CrewAI Rich output to avoid closed-file writes

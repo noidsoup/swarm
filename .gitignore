@@ -20,6 +20,9 @@ env/
 
 uncommitted/
 
+# Cursor worker temp payloads (Windows subprocess dispatch)
+.swarm/worker/
+
 # Security: never commit local SSH material
 .ssh/
 **/.ssh/
