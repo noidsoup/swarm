@@ -419,6 +419,9 @@ Primary defaults from `swarm/config.py`:
   - Windows: `http://127.0.0.1:11434`
   - non-Windows: `http://localhost:11434`
 - `DEFAULT_EXECUTION_MODE`: `local`
+- `PARALLEL_QUALITY`: `false` (set `true` to run quality-agent checks in parallel local flow)
+- `SWARM_API_TOKEN`: empty by default; when set, API requires `Authorization: Bearer <token>` except `/health`, `/docs`, `/openapi.json`
+- `SWARM_LOG_FORMAT`: `text` by default; set to `json` for structured JSON logs
 
 ## 10) Troubleshooting Matrix
 
@@ -454,6 +457,32 @@ When changing runtime/orchestration behavior:
 ruff check swarm tests run.py daemon.py setup.py simplemem_client.py simplemem_cli.py
 pytest
 ```
+
+Additional local verification used for smoke transport checks without model calls:
+
+```bash
+SWARM_SMOKE_SKIP_LLM=1 python3 - <<'PY'
+from swarm.config import cfg
+from swarm.dispatch import Dispatcher
+print(Dispatcher(cfg).dispatch(
+    plan='cursor smoke test',
+    feature_name='cursor smoke test',
+    builder_type='python_dev',
+    repo_path='.',
+    execution_mode='local',
+)["build_summary"])
+PY
+```
+
+## 13) 2026-03-13 Hardening Updates
+
+- Worker execution path is now step-based (`RunContext`) instead of a single monolithic `_run_swarm` body.
+- Error handling uses typed exceptions in `swarm/errors.py` for clearer failure semantics.
+- Worker supports graceful shutdown (`SIGTERM`, `SIGINT`) and retains partial results before postflight fail paths.
+- Local dispatch now uses per-run config copies and temporary module cfg override binding to prevent process-global config drift.
+- API supports bearer-token auth via `SWARM_API_TOKEN`.
+- Repo URL validation now resolves DNS and blocks hosts resolving to private/loopback IPs.
+- Logging supports text/json formatting switch (`SWARM_LOG_FORMAT`), and flow phase timing is emitted in logs.
 
 When changing docs only:
 

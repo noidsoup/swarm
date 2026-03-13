@@ -587,3 +587,37 @@ Replace IP/username/key path if different. Expect `"status": "complete"` and a r
 - [ ] Implement the plan from `ASYNC_CURSOR_HANDOFF_PLAN.md` on Windows.
 - [ ] Run targeted tests for `cursor_worker` and `dispatch` plus any CLI tests.
 - [ ] Validate acceptance criteria with a real `--mode cursor --async` run and follow-up status/log polling.
+
+---
+
+## 2026-03-13 — Close out: orchestrator hardening and reliability sweep
+
+**Branch:** `main` (merged commits: `e1b71f1`, `30099f8`)
+
+**Completed since last entry**
+- Refactored `swarm/worker.py` run execution into explicit pipeline steps with `RunContext` (`_workspace_step`, `_context_step`, `_preflight_step`, `_execute_step`, `_postflight_step`, `_eval_step`).
+- Added structured error hierarchy in `swarm/errors.py` and migrated dispatch/validation failure paths to typed errors.
+- Added per-task config copy support (`SwarmConfig.copy()`), applied in worker path, and isolated local dispatch cfg overrides without mutating process-global config.
+- Added transient retry classification, graceful worker shutdown on SIGTERM/SIGINT, optional parallel quality execution (`PARALLEL_QUALITY`), phase timing logs, and structured logging output mode.
+- Hardened API and worker safety: bearer-token API auth (`SWARM_API_TOKEN`) and DNS rebinding checks for repo URL host resolution.
+- Improved developer workflow: smarter builder routing hints, partial-result persistence on failure, removed silent `_call_execute_flow` TypeError fallback, added `Makefile`, added `ruff` dependency.
+- Extended tests and verification: suite now passes `108` tests; `ruff` checks pass; local smoke dispatch verified with `SWARM_SMOKE_SKIP_LLM=1`.
+- Synced Windows host from Mac after push using `scripts/swarm_remote.py update-windows`.
+
+**Current state / in progress**
+- Main branch includes the reliability sweep and dispatch cfg-isolation follow-up.
+- Runtime behavior is improved for observability, failure transparency, and operational safety.
+
+**Key decisions (and why)**
+- Kept worker-level config isolation as mandatory for correctness under concurrent task handling.
+- Implemented dispatch cfg isolation with temporary module-level cfg rebinding to avoid global mutation while preserving smoke/runtime override behavior.
+- Validated smoke via dispatcher local smoke path since `run.py` no longer supports `--mode` CLI flag in this repo state.
+
+**Known risks / blockers**
+- Local standalone/full-flow smoke still depends on reachable Ollama endpoint; without Ollama, full `run.py "smoke test"` fails at model connection.
+- Windows remote workflows still require `WINDOWS_HOST`/`WINDOWS_USER`/optional `WINDOWS_SSH_KEY` in environment for unattended updates.
+
+**Next concrete steps**
+- [ ] Add a dedicated CLI smoke alias in `run.py` that skips model calls consistently for operator checks.
+- [ ] Add integration coverage for `_with_local_cfg_overrides` across non-smoke local dispatch paths.
+- [ ] Add API auth token examples to README quickstart snippets for secured deployments.
