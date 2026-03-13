@@ -312,7 +312,7 @@ class CursorWorkerService:
         heartbeat_thread.start()
 
         result_holder: dict[str, Any] = {}
-        error_holder: dict[str, BaseException] = {}
+        error_holder: dict[str, Any] = {}
         worker_thread = threading.Thread(
             target=self._dispatch_task,
             args=(payload, result_holder, error_holder),
@@ -333,11 +333,11 @@ class CursorWorkerService:
                 "polish_report": "",
             }
         elif error_holder:
-            exc = next(iter(error_holder.values()))
-            tb = traceback.format_exc()
+            exc = error_holder.get("error")
+            tb = error_holder.get("traceback", "")
             result = {
                 "status": "error",
-                "error": str(exc),
+                "error": str(exc) if exc else "unknown",
                 "traceback": tb,
                 "build_summary": "",
                 "review_feedback": "",
@@ -379,7 +379,7 @@ class CursorWorkerService:
         self,
         payload: dict[str, Any],
         result_holder: dict[str, Any],
-        error_holder: dict[str, BaseException],
+        error_holder: dict[str, Any],
     ) -> None:
         try:
             result_holder["result"] = self.dispatcher.dispatch(
@@ -392,6 +392,7 @@ class CursorWorkerService:
             )
         except Exception as exc:
             error_holder["error"] = exc
+            error_holder["traceback"] = traceback.format_exc()
 
     def _heartbeat_loop(
         self,
