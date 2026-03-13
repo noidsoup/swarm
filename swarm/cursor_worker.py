@@ -335,10 +335,12 @@ class CursorWorkerService:
         elif error_holder:
             exc = error_holder.get("error")
             tb = error_holder.get("traceback", "")
+            err_msg = str(exc) if exc else "unknown"
+            if tb:
+                err_msg = err_msg + "\n\n" + tb
             result = {
                 "status": "error",
-                "error": str(exc) if exc else "unknown",
-                "traceback": tb,
+                "error": err_msg,
                 "build_summary": "",
                 "review_feedback": "",
                 "quality_report": "",
