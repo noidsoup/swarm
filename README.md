@@ -192,12 +192,27 @@ Task records also include summaries (`context_summary`, `retrieval_summary`, `va
 
 ## Testing and Verification
 
-Run full checks:
+### Quick checks (no Ollama required)
+
+```bash
+make lint      # ruff only
+make test      # pytest (108+ unit tests)
+make smoke     # local dispatch with SWARM_SMOKE_SKIP_LLM=1 — verifies pipeline wiring
+make check     # lint + test
+```
+
+All unit tests use mocks; no real Ollama, Redis, or SSH needed.
+
+### Full verification
 
 ```bash
 ruff check swarm tests run.py daemon.py setup.py simplemem_client.py simplemem_cli.py
 pytest
 ```
+
+### Cursor mode (Mac → Windows)
+
+To validate the cursor offload path end-to-end, see **AI_RUNBOOK.md** → "Cursor smoke test" and "Update Windows from Mac". Use `make smoke` for local-only wiring checks; use `scripts/swarm_remote.py dispatch ... --mode cursor` for real Mac→Windows validation.
 
 High-value test areas:
 

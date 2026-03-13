@@ -621,3 +621,27 @@ Replace IP/username/key path if different. Expect `"status": "complete"` and a r
 - [ ] Add a dedicated CLI smoke alias in `run.py` that skips model calls consistently for operator checks.
 - [ ] Add integration coverage for `_with_local_cfg_overrides` across non-smoke local dispatch paths.
 - [ ] Add API auth token examples to README quickstart snippets for secured deployments.
+
+---
+
+## 2026-03-13 — Testing improvements and close-out
+
+**Branch:** `chore/close-out-2026-03-13` (PR to merge)
+
+**Completed since last entry**
+- Fixed `tests/test_config.py`: incorrect `monkeypatch: Mock` type hints → `pytest.MonkeyPatch`.
+- Added `make smoke` target to Makefile: runs local dispatch with `SWARM_SMOKE_SKIP_LLM=1` to verify pipeline wiring without Ollama.
+- Expanded README "Testing and Verification" section: `make lint`, `make test`, `make smoke`, `make check`; clarified no Ollama/Redis needed for unit tests; pointer to AI_RUNBOOK for cursor-mode validation.
+
+**Current state / in progress**
+- Session close-out: memory, runbook, SimpleMem updated; PR created and merged.
+
+**Key decisions (and why)**
+- `make smoke` provides a quick "does the pipeline work?" check for operators without requiring Ollama.
+- README testing section prioritizes quick checks and explicit "no external deps" for unit tests.
+
+**Known risks / blockers**
+- None.
+
+**Next concrete steps**
+- [ ] Optional: add CI job that runs `make smoke` on every push.
