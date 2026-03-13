@@ -77,6 +77,13 @@ def _delete(path: str):
     return resp.json()
 
 
+def _api_fallback_to_cursor(exc: Exception) -> bool:
+    """Return True when cursor outbox fallback should be attempted."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code == 404
+    return isinstance(exc, httpx.HTTPError)
+
+
 def _cursor_client_or_none() -> CursorWorkerClient | None:
     dispatcher = Dispatcher(cfg)
     if not dispatcher.connection.enabled():
@@ -146,8 +153,8 @@ def cmd_status(args):
             task = _get(f"/tasks/{args.task_id}")
             print(json.dumps(task, indent=2))
             return
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code != 404:
+        except Exception as exc:
+            if not _api_fallback_to_cursor(exc):
                 raise
         client = _cursor_client_or_none()
         if client is None:
@@ -203,8 +210,8 @@ def cmd_logs(args):
                     except json.JSONDecodeError:
                         pass
                     print(data)
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code != 404:
+    except Exception as exc:
+        if not _api_fallback_to_cursor(exc):
             raise
         client = _cursor_client_or_none()
         if client is None:
@@ -231,8 +238,8 @@ def cmd_cancel(args):
         result = _delete(f"/tasks/{args.task_id}")
         print(result.get("message", result))
         return
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code != 404:
+    except Exception as exc:
+        if not _api_fallback_to_cursor(exc):
             raise
     client = _cursor_client_or_none()
     if client is None:

@@ -259,6 +259,60 @@ $env:WINDOWS_CURSOR_TASK_TIMEOUT = "3600"
 - Confirm file content change directly in target repo.
 - If prompt required "exactly one line appended", verify no duplicate appended lines before marking success.
 
+### Windows agent: apply latest Mac-side status/cancel reliability fixes
+
+Use this when the Mac can dispatch tasks but `status`/`cancel` intermittently fail due to API transport resets.
+
+1) **Pull latest on Windows**
+
+```powershell
+cd C:\Users\<you>\repos\swarm
+git checkout main
+git pull
+```
+
+2) **Restart cursor worker in a fresh shell**
+
+```powershell
+.\scripts\cursor-worker.ps1 stop
+Remove-Item Env:SWARM_SMOKE_SKIP_LLM -ErrorAction SilentlyContinue
+$env:WINDOWS_CURSOR_TASK_TIMEOUT = "3600"
+.\scripts\cursor-worker.ps1 start
+.\scripts\cursor-worker.ps1 status
+```
+
+3) **Run Mac-side async submit (from Mac)**
+
+```bash
+WINDOWS_CURSOR_TIMEOUT=7200 \
+WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=600 \
+WINDOWS_SSH_KEY="$HOME/.ssh/id_ed25519_nopass" \
+WINDOWS_HOST=<windows-ip> \
+WINDOWS_USER=<windows-user> \
+scripts/remote-dev-mac.sh dispatch "<task prompt>" --mode cursor --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"
+```
+
+4) **Track from Mac (now resilient to API connection resets)**
+
+```bash
+WINDOWS_SSH_KEY="$HOME/.ssh/id_ed25519_nopass" WINDOWS_HOST=<windows-ip> WINDOWS_USER=<windows-user> scripts/remote-dev-mac.sh status <task_id>
+WINDOWS_SSH_KEY="$HOME/.ssh/id_ed25519_nopass" WINDOWS_HOST=<windows-ip> WINDOWS_USER=<windows-user> scripts/remote-dev-mac.sh logs <task_id>
+WINDOWS_SSH_KEY="$HOME/.ssh/id_ed25519_nopass" WINDOWS_HOST=<windows-ip> WINDOWS_USER=<windows-user> scripts/remote-dev-mac.sh cancel <task_id>
+```
+
+What changed:
+- `status/logs/cancel` now fall back to cursor outbox/inbox tracking when API calls fail with transport-level `httpx` errors (not only 404).
+- queued-task cancel path was hardened in cursor worker remote script generation.
+
+5) **Quick verification checklist**
+
+- `dispatch` returns queued `task_id` quickly.
+- `status <task_id>` returns a cursor payload even if API is unreachable.
+- `cancel <task_id>` succeeds for queued tasks.
+- Windows queue files are consistent:
+  - `~/.swarm/inbox/<task_id>.json` removed on queued cancel
+  - `~/.swarm/outbox/<task_id>.json` contains terminal status.
+
 ## 5) MCP Operations
 
 From `swarm/mcp_server.py`, supported tools:

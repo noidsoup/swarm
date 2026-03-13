@@ -105,6 +105,24 @@ def test_cmd_status_falls_back_to_cursor_tracker_on_api_404(monkeypatch, capsys)
     assert payload["task_id"] == "swarm-1"
 
 
+def test_cmd_status_falls_back_to_cursor_tracker_on_api_connection_error(monkeypatch, capsys) -> None:
+    def raise_read_error(path: str):
+        raise httpx.ReadError("connection reset")
+
+    class FakeClient:
+        def get_status(self, task_id: str) -> dict:
+            return {"status": "queued", "task_id": task_id, "execution_mode": "cursor"}
+
+    monkeypatch.setattr(swarm_remote, "_get", raise_read_error)
+    monkeypatch.setattr(swarm_remote, "_cursor_client_or_none", lambda: FakeClient())
+    args = SimpleNamespace(task_id="swarm-conn")
+
+    swarm_remote.cmd_status(args)
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "queued"
+    assert payload["task_id"] == "swarm-conn"
+
+
 def test_cmd_cancel_falls_back_to_cursor_tracker_on_api_404(monkeypatch, capsys) -> None:
     def raise_404(path: str):
         request = httpx.Request("DELETE", "http://example/tasks/swarm-2")

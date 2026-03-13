@@ -251,20 +251,23 @@ def test_cursor_worker_client_get_status_reports_queued(monkeypatch) -> None:
 
 def test_cursor_worker_client_cancel_queued_writes_cancelled_result(monkeypatch) -> None:
     client = CursorWorkerClient(SimpleNamespace(user="nicho", host="127.0.0.1", ssh_key_path=""))
+    commands: list[str] = []
     monkeypatch.setattr(
         client,
         "get_status",
         lambda task_id: {"status": "queued", "task_id": task_id, "execution_mode": "cursor"},
     )
-    monkeypatch.setattr(
-        client,
-        "_run_ssh",
-        lambda remote_cmd, timeout=30: subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
-    )
+
+    def fake_run_ssh(remote_cmd, timeout=30):
+        commands.append(remote_cmd)
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(client, "_run_ssh", fake_run_ssh)
     result = client.cancel("swarm-cancel1")
 
     assert result["status"] == "cancelled"
     assert result["task_id"] == "swarm-cancel1"
+    assert any("inbox.unlink(missing_ok=True)" in cmd for cmd in commands)
 
 
 def test_cursor_worker_client_cancel_running_returns_cancel_requested(monkeypatch) -> None:

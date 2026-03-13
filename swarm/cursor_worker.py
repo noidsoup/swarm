@@ -161,7 +161,7 @@ class CursorWorkerClient:
                 "task_id=sys.argv[2];"
                 "inbox=root/'inbox'/f'{task_id}.json';"
                 "outbox=root/'outbox'/f'{task_id}.json';"
-                "if inbox.exists(): inbox.unlink();"
+                "inbox.unlink(missing_ok=True);"
                 "now=datetime.datetime.now(datetime.timezone.utc).isoformat();"
                 "payload={'status':'cancelled','task_id':task_id,'execution_mode':'cursor',"
                 "'error':'Cancelled before execution','started_at':now,'completed_at':now};"
