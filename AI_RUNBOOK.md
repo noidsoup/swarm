@@ -65,7 +65,7 @@ All require `WINDOWS_HOST` and `WINDOWS_USER` for cursor mode; optional `WINDOWS
 |--------|-------------|
 | `dispatch "feature"` | Submit task (async by default); use `--wait` to block. |
 | `run "feature" [--retry N]` | Cursor-only: dispatch, poll until done, retry on failure until success. |
-| `update-windows [--restart-worker]` | SSH to Windows: `git checkout main && git pull`; optionally restart cursor worker. |
+| `update-windows [--restart-worker] [--fast]` | SSH to Windows: `git checkout main && git pull`; optionally restart cursor worker (--fast = smoke mode). |
 | `status [task_id]` | Show task status (or list all). Falls back to cursor outbox if API unreachable. |
 | `logs <task_id>` | Stream or poll task logs. |
 | `cancel <task_id>` | Cancel a queued or in-flight task. |
@@ -105,6 +105,30 @@ WINDOWS_HOST=... WINDOWS_USER=... python3 scripts/swarm_remote.py update-windows
 ```
 
 Uses `WINDOWS_SSH_KEY` if set; runs `git checkout main && git pull` in the Windows repo (default `C:\Users\<user>\repos\swarm`). Override path with `--repo-path "C:\\Users\\you\\repos\\swarm"`.
+
+Add `--fast` with `--restart-worker` for smoke tests (starts worker with `SWARM_SMOKE_SKIP_LLM=1`, no Ollama needed):
+
+```bash
+python3 scripts/swarm_remote.py update-windows --restart-worker --fast
+```
+
+### Smoke test without Ollama (quick pipeline verification)
+
+Verify Mac→Windows cursor transport **without** Ollama running:
+
+1. **On Windows:** Start worker in fast mode:
+   ```powershell
+   .\scripts\cursor-worker.ps1 stop
+   .\scripts\cursor-worker.ps1 start -Fast
+   ```
+   Or from Mac: `python3 scripts/swarm_remote.py update-windows --restart-worker --fast`
+
+2. **From Mac:**
+   ```bash
+   python3 scripts/swarm_remote.py run "cursor smoke test" --mode cursor --skip-llm --repo-path "C:/Users/<you>/repos/swarm"
+   ```
+
+Expect `status: complete` and `build_summary` containing `SMOKE_OK` within ~10–15 seconds.
 
 ### Windows "ready" sequence for real cursor runs
 
@@ -470,7 +494,16 @@ Primary defaults from `swarm/config.py`:
 When changing runtime/orchestration behavior:
 
 ```bash
-ruff check swarm tests run.py daemon.py setup.py simplemem_client.py simplemem_cli.py
+make lint    # ruff check
+make test    # pytest
+make smoke   # local dispatch smoke (no Ollama) — verifies pipeline wiring
+make check   # lint + test
+```
+
+Or manually:
+
+```bash
+ruff check swarm tests run.py daemon.py setup.py simplemem_client.py simplemem_cli.py scripts/swarm_remote.py
 pytest
 ```
 
