@@ -50,7 +50,10 @@ class SwarmConfig:
         default_factory=lambda: int(os.getenv("ADAPTATION_MAX_RETRIES", "2"))
     )
     max_review_loops: int = 3
-    verbose: bool = True
+    verbose: bool = field(
+        default_factory=lambda: os.getenv("SWARM_VERBOSE", "").lower() not in ("0", "false", "no")
+        and not os.getenv("SWARM_DAEMON_LOG_FILE")
+    )
     repo_root: str = field(default_factory=lambda: os.getcwd())
     mode: str = field(
         default_factory=lambda: os.getenv("SWARM_MODE", "headless")
