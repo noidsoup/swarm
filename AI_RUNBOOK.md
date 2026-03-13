@@ -290,6 +290,12 @@ $env:WINDOWS_CURSOR_TASK_TIMEOUT = "3600"
 - Confirm file content change directly in target repo.
 - If prompt required "exactly one line appended", verify no duplicate appended lines before marking success.
 
+7) **"I/O operation on closed file" on Windows**
+
+- The worker runs as a daemon child with stdout/stderr redirected to a log file; something may still write to a closed stream.
+- To see the full traceback: on Windows, stop the daemon (`.\\scripts\\cursor-worker.ps1 stop`), put one task in the inbox (dispatch from Mac without `--wait`), then run `python scripts/cursor_worker.py --once` in a console. The exception and traceback will print to the console.
+- Check the daemon log: `Get-Content "$env:TEMP\\swarm-worker.log" -Tail 200`.
+
 ### Windows agent: apply latest Mac-side status/cancel reliability fixes
 
 Use this when the Mac can dispatch tasks but `status`/`cancel` intermittently fail due to API transport resets.
