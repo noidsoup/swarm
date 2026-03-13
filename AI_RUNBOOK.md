@@ -198,6 +198,67 @@ curl http://127.0.0.1:11434/api/tags
 Get-Content "$env:TEMP\swarm-worker.log" -Tail 200
 ```
 
+### Windows agent: copy/paste execution flow (long tasks)
+
+Use this exact flow when delegating work to the Windows agent and you want reliable completion for 30-90 minute tasks.
+
+1) **Prepare Windows worker shell**
+
+```powershell
+cd C:\Users\<you>\repos\swarm
+git checkout main
+git pull
+.\scripts\cursor-worker.ps1 stop
+Remove-Item Env:SWARM_SMOKE_SKIP_LLM -ErrorAction SilentlyContinue
+$env:WINDOWS_CURSOR_TASK_TIMEOUT = "3600"
+.\scripts\cursor-worker.ps1 start
+.\scripts\cursor-worker.ps1 status
+```
+
+2) **Submit from Mac (async-first)**
+
+```bash
+WINDOWS_CURSOR_TIMEOUT=7200 \
+WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=600 \
+WINDOWS_SSH_KEY="$HOME/.ssh/id_ed25519_nopass" \
+WINDOWS_HOST=<windows-ip> \
+WINDOWS_USER=<windows-user> \
+scripts/remote-dev-mac.sh dispatch "<task prompt>" --mode cursor --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"
+```
+
+3) **Track run from Mac**
+
+```bash
+WINDOWS_SSH_KEY="$HOME/.ssh/id_ed25519_nopass" WINDOWS_HOST=<windows-ip> WINDOWS_USER=<windows-user> scripts/remote-dev-mac.sh status <task_id>
+WINDOWS_SSH_KEY="$HOME/.ssh/id_ed25519_nopass" WINDOWS_HOST=<windows-ip> WINDOWS_USER=<windows-user> scripts/remote-dev-mac.sh logs <task_id>
+WINDOWS_SSH_KEY="$HOME/.ssh/id_ed25519_nopass" WINDOWS_HOST=<windows-ip> WINDOWS_USER=<windows-user> scripts/remote-dev-mac.sh cancel <task_id>
+```
+
+4) **If `status` endpoint is unreachable from Mac**
+
+Directly inspect queue files on Windows over SSH:
+
+```bash
+ssh -i "$HOME/.ssh/id_ed25519_nopass" <windows-user>@<windows-ip> "python -c \"from pathlib import Path; import json; p=Path('~/.swarm/outbox/<task_id>.json').expanduser(); print(json.loads(p.read_text(encoding='utf-8')).get('status') if p.exists() else 'MISSING')\""
+```
+
+5) **If task hits 600s timeout error**
+
+- Root cause is worker-side cap (`WINDOWS_CURSOR_TASK_TIMEOUT`), not polling.
+- Restart worker with higher timeout in the same shell:
+
+```powershell
+.\scripts\cursor-worker.ps1 stop
+$env:WINDOWS_CURSOR_TASK_TIMEOUT = "3600"
+.\scripts\cursor-worker.ps1 start
+```
+
+6) **Post-run verification**
+
+- Confirm terminal status in outbox (`complete`/`error`).
+- Confirm file content change directly in target repo.
+- If prompt required "exactly one line appended", verify no duplicate appended lines before marking success.
+
 ## 5) MCP Operations
 
 From `swarm/mcp_server.py`, supported tools:
