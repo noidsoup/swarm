@@ -141,7 +141,14 @@ Run API + worker on remote host (or Docker), then dispatch and poll.
 
 ### 6) Cursor worker mode (`execution_mode=cursor`)
 
-Use SSH inbox/outbox transport with `CursorWorkerClient` and `CursorWorkerService`.
+Use SSH inbox/outbox transport with `CursorWorkerClient` and `CursorWorkerService`. From the Mac, use `scripts/swarm_remote.py`:
+
+- **dispatch** — submit a task (async by default); `--wait` to block.
+- **run** — cursor-only: dispatch, poll until done, and retry on failure (e.g. `--retry 5`).
+- **update-windows** — SSH to Windows and run `git pull` in the swarm repo; `--restart-worker` to restart the cursor worker.
+- **status** / **logs** / **cancel** — track or cancel by `task_id`.
+
+Requires `WINDOWS_HOST`, `WINDOWS_USER` (and optionally `WINDOWS_SSH_KEY`). See `AI_RUNBOOK.md` for full sequences.
 
 ## API Surface (Remote Gateway)
 

@@ -29,6 +29,16 @@ The goal is to run complex AI tasks from the Mac and have the heavy work happen 
 - `swarm/api.py`: remote task submission API
 - `swarm/worker.py`: background task worker
 - `daemon.py` and `swarm/daemon_cli.py`: continuous improvement daemon entry points
+- `scripts/swarm_remote.py`: Mac-side remote CLI (dispatch, run, update-windows, status, logs, cancel)
+
+## Mac-side remote CLI (swarm_remote)
+
+When using cursor mode (Mac dispatches, Windows runs the worker), use `scripts/swarm_remote.py` from the Mac:
+
+- **dispatch** — Submit a task (async by default); returns `task_id`. Use `--wait` to block until done.
+- **run** — Cursor-only: dispatch, poll status until terminal state, and **retry on failure** (e.g. `--retry 5`). Use for "run until success."
+- **update-windows** — SSH to Windows and run `git checkout main && git pull` in the swarm repo; use `--restart-worker` to restart the cursor worker after pull. Requires `WINDOWS_HOST`, `WINDOWS_USER` (and optionally `WINDOWS_SSH_KEY`).
+- **status** / **logs** / **cancel** — Track or cancel a task by `task_id`. These fall back to cursor outbox when the API is unreachable.
 
 ## Documentation Canonicals
 
@@ -77,7 +87,7 @@ The goal is to run complex AI tasks from the Mac and have the heavy work happen 
 
 ## Verification
 
-- Run `ruff check swarm tests run.py daemon.py setup.py simplemem_client.py simplemem_cli.py`
+- Run `ruff check swarm tests run.py daemon.py setup.py simplemem_client.py simplemem_cli.py scripts/swarm_remote.py`
 - Run `pytest`
 - If you change packaging or installs, make sure `requirements.txt` and `setup.py` stay aligned
 
@@ -90,6 +100,7 @@ The goal is to run complex AI tasks from the Mac and have the heavy work happen 
 
 - `run_swarm()` is asynchronous and returns a task ID immediately
 - Poll with `swarm_status(task_id)` for final status and summaries
+- From the Mac, use `scripts/swarm_remote.py run "feature" --retry N` to dispatch in cursor mode and retry until success; use `update-windows` to pull latest on the Windows repo (and optionally restart the worker) via SSH
 - Remote API tasks should be safe for untrusted input: validate paths, repo URLs, and shell-adjacent arguments
 
 ## Quick Runtime Matrix
@@ -97,3 +108,4 @@ The goal is to run complex AI tasks from the Mac and have the heavy work happen 
 - **Headless (recommended):** Cursor plans/judges, swarm executes phases (`build, review, quality, polish`).
 - **Standalone:** Swarm runs planning + execution end-to-end; shipping is only automatic when `AUTO_COMMIT=true`.
 - **Remote Ollama on Windows:** set `OLLAMA_BASE_URL` to the Windows Ollama URL; Mac runs orchestration while Windows provides model inference.
+- **Cursor worker on Windows:** Mac runs `swarm_remote.py dispatch` or `run` (with `--mode cursor`); Windows runs the cursor worker. Use `swarm_remote.py update-windows` to pull and optionally restart the worker from the Mac.

@@ -57,6 +57,19 @@ python -m swarm.worker
 
 **Ready for real dev (quick check):** On Windows run `.\scripts\cursor-worker.ps1 status` (worker running). On Mac run a dispatch with `--mode cursor` and your repo path; use `status <task_id>` / `logs <task_id>` to track. Default task timeout is 3600s.
 
+### swarm_remote commands (Mac-side)
+
+All require `WINDOWS_HOST` and `WINDOWS_USER` for cursor mode; optional `WINDOWS_SSH_KEY`.
+
+| Command | Description |
+|--------|-------------|
+| `dispatch "feature"` | Submit task (async by default); use `--wait` to block. |
+| `run "feature" [--retry N]` | Cursor-only: dispatch, poll until done, retry on failure until success. |
+| `update-windows [--restart-worker]` | SSH to Windows: `git checkout main && git pull`; optionally restart cursor worker. |
+| `status [task_id]` | Show task status (or list all). Falls back to cursor outbox if API unreachable. |
+| `logs <task_id>` | Stream or poll task logs. |
+| `cancel <task_id>` | Cancel a queued or in-flight task. |
+
 This repo supports three patterns:
 
 - **A. Remote inference only:** set `OLLAMA_BASE_URL` to Windows host, run swarm locally.
@@ -74,6 +87,18 @@ Timeout knobs:
 - `WINDOWS_CURSOR_TIMEOUT`
 - `WINDOWS_CURSOR_HEARTBEAT_TIMEOUT`
 - `WINDOWS_CURSOR_TASK_TIMEOUT` (worker side)
+
+### Update Windows from Mac (git pull via SSH)
+
+From the Mac, pull latest on the Windows swarm repo (and optionally restart the worker):
+
+```bash
+WINDOWS_HOST=<windows-ip> WINDOWS_USER=<windows-user> python3 scripts/swarm_remote.py update-windows
+# Optional: restart cursor worker after pull
+WINDOWS_HOST=... WINDOWS_USER=... python3 scripts/swarm_remote.py update-windows --restart-worker
+```
+
+Uses `WINDOWS_SSH_KEY` if set; runs `git checkout main && git pull` in the Windows repo (default `C:\Users\<user>\repos\swarm`). Override path with `--repo-path "C:\\Users\\you\\repos\\swarm"`.
 
 ### Windows "ready" sequence for real cursor runs
 
@@ -123,6 +148,9 @@ python3 scripts/swarm_remote.py dispatch "Add a tiny append-only note to README"
 
 # blocking until completion
 python3 scripts/swarm_remote.py dispatch "Add a tiny append-only note to README" --mode cursor --wait --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"
+
+# run until success (dispatch + poll + retry on failure, cursor only)
+python3 scripts/swarm_remote.py run "Add a tiny append-only note to README" --repo-path "C:/Users/<you>/repos/swarm" --retry 5
 ```
 
 ### Detailed Windows operator instructions (copy/paste)

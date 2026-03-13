@@ -141,3 +141,78 @@ def test_cmd_cancel_falls_back_to_cursor_tracker_on_api_404(monkeypatch, capsys)
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "cancelled"
     assert payload["task_id"] == "swarm-2"
+
+
+def test_cmd_run_succeeds_on_first_attempt(monkeypatch, capsys) -> None:
+    dispatch_calls: list[dict] = []
+    statuses = [{"status": "completed", "task_id": "swarm-ok"}]
+
+    class FakeDispatcher:
+        def __init__(self, cfg) -> None:
+            self.cfg = cfg
+
+        def dispatch(self, **kwargs):
+            dispatch_calls.append(kwargs)
+            return {"task_id": "swarm-ok", "status": "queued", "execution_mode": "cursor"}
+
+    def fake_get_status(task_id: str) -> dict:
+        return statuses[0]
+
+    monkeypatch.setattr(swarm_remote, "Dispatcher", FakeDispatcher)
+    monkeypatch.setattr(swarm_remote, "_get_task_status", fake_get_status)
+    monkeypatch.setattr(swarm_remote.time, "sleep", lambda _: None)
+    monkeypatch.setattr(swarm_remote.cfg, "default_execution_mode", "cursor")
+    args = SimpleNamespace(
+        feature="add a line",
+        plan=None,
+        builder=None,
+        repo_path="",
+        repo_url="",
+        mode="cursor",
+        retry=0,
+        poll_interval=5,
+    )
+
+    swarm_remote.cmd_run(args)
+    out = capsys.readouterr().out
+    assert "Completed: swarm-ok" in out
+    assert len(dispatch_calls) == 1
+
+
+def test_cmd_run_retries_until_success(monkeypatch, capsys) -> None:
+    dispatch_calls: list[dict] = []
+
+    class FakeDispatcher:
+        def __init__(self, cfg) -> None:
+            self.cfg = cfg
+
+        def dispatch(self, **kwargs):
+            dispatch_calls.append(kwargs)
+            tid = "swarm-1" if len(dispatch_calls) == 1 else "swarm-2"
+            return {"task_id": tid, "status": "queued", "execution_mode": "cursor"}
+
+    def fake_get_status(task_id: str) -> dict:
+        if task_id == "swarm-1":
+            return {"status": "failed", "task_id": "swarm-1"}
+        return {"status": "completed", "task_id": "swarm-2"}
+
+    monkeypatch.setattr(swarm_remote, "Dispatcher", FakeDispatcher)
+    monkeypatch.setattr(swarm_remote, "_get_task_status", fake_get_status)
+    monkeypatch.setattr(swarm_remote.time, "sleep", lambda _: None)
+    monkeypatch.setattr(swarm_remote.cfg, "default_execution_mode", "cursor")
+    args = SimpleNamespace(
+        feature="fix it",
+        plan=None,
+        builder=None,
+        repo_path="",
+        repo_url="",
+        mode="cursor",
+        retry=2,
+        poll_interval=1,
+    )
+
+    swarm_remote.cmd_run(args)
+    out = capsys.readouterr().out
+    assert "Completed:" in out
+    assert "swarm-2" in out
+    assert len(dispatch_calls) == 2

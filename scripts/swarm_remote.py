@@ -9,6 +9,9 @@ Install on Mac:
 Usage:
     swarm-remote submit "Build a login page with OAuth"
     swarm-remote submit --plan plan.md "Implement the plan"
+    swarm-remote dispatch "Feature request" --mode cursor
+    swarm-remote run "Feature request" --retry 5
+    swarm-remote update-windows [--restart-worker]
     swarm-remote status
     swarm-remote status <task-id>
     swarm-remote logs <task-id>
@@ -233,6 +236,70 @@ def cmd_logs(args):
         print("\nStopped streaming.")
 
 
+def _get_task_status(task_id: str) -> dict:
+    """Return task payload from API or cursor outbox. Raises on unrecoverable error."""
+    try:
+        return _get(f"/tasks/{task_id}")
+    except Exception as exc:
+        if not _api_fallback_to_cursor(exc):
+            raise
+    client = _cursor_client_or_none()
+    if client is None:
+        raise SystemExit("Task not found via API and cursor host/user are not configured.")
+    return client.get_status(task_id)
+
+
+def cmd_run(args):
+    """Dispatch task, poll until terminal state, retry on failure (cursor mode)."""
+    mode = (args.mode or cfg.default_execution_mode).strip().lower()
+    if mode != "cursor":
+        raise SystemExit("run (poll + retry) is only supported with --mode cursor.")
+
+    plan = ""
+    if args.plan:
+        with open(args.plan, encoding="utf-8") as f:
+            plan = f.read()
+
+    dispatcher = Dispatcher(cfg)
+    poll_interval = getattr(args, "poll_interval", 5)
+    max_attempts = 1 + getattr(args, "retry", 0)
+    terminal_ok = {"completed", "complete"}
+    terminal_fail = {"failed", "error", "cancelled", "not_found"}
+
+    for attempt in range(1, max_attempts + 1):
+        result = dispatcher.dispatch(
+            plan=plan or args.feature,
+            feature_name=args.feature,
+            builder_type=args.builder or "",
+            repo_path=args.repo_path or "",
+            repo_url=args.repo_url or "",
+            execution_mode=mode,
+            wait_for_completion=False,
+        )
+        task_id = result.get("task_id", "")
+        if not task_id:
+            print("Dispatch did not return task_id.", file=sys.stderr)
+            sys.exit(1)
+        print(f"Attempt {attempt}/{max_attempts}  task_id={task_id}  (poll every {poll_interval}s)")
+
+        while True:
+            time.sleep(poll_interval)
+            payload = _get_task_status(task_id)
+            status = (payload.get("status") or "").lower()
+            if status in terminal_ok:
+                print(f"Completed: {task_id}")
+                return
+            if status in terminal_fail:
+                print(f"Terminal state: {status}  task_id={task_id}")
+                break
+
+        if attempt < max_attempts:
+            print("Retrying...")
+
+    print("All attempts failed.", file=sys.stderr)
+    sys.exit(1)
+
+
 def cmd_cancel(args):
     try:
         result = _delete(f"/tasks/{args.task_id}")
@@ -312,6 +379,27 @@ def cmd_wake(args):
     subprocess.run(cmd, check=True)
 
 
+def cmd_update_windows(args):
+    """Run git pull on the Windows swarm repo via SSH; optionally restart cursor worker."""
+    host = cfg.windows_host or os.getenv("WINDOWS_HOST", "")
+    user = cfg.windows_user or os.getenv("WINDOWS_USER", "")
+    if not host or not user:
+        raise SystemExit("WINDOWS_HOST and WINDOWS_USER are required (set in env or .env).")
+    key = (cfg.windows_ssh_key or os.getenv("WINDOWS_SSH_KEY", "")).strip()
+    repo_path = (getattr(args, "repo_path", None) or "").strip() or f"C:\\Users\\{user}\\repos\\swarm"
+    # Windows cmd.exe: cd /d <path> && git ...
+    remote_cmd = f"cd /d {repo_path} && git checkout main && git pull"
+    if getattr(args, "restart_worker", False):
+        remote_cmd += " && powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\cursor-worker.ps1 stop && powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\cursor-worker.ps1 start"
+    ssh_cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15"]
+    if key:
+        ssh_cmd.extend(["-i", key])
+    ssh_cmd.extend([f"{user}@{host}", remote_cmd])
+    print(f"Running on Windows ({user}@{host}): git checkout main && git pull ...")
+    subprocess.run(ssh_cmd, check=True)
+    print("Done.")
+
+
 def main():
     global SWARM_URL
     parser = argparse.ArgumentParser(
@@ -346,6 +434,38 @@ def main():
         help="Compatibility alias for cursor async dispatch (async is default in cursor mode).",
     )
     p_dispatch.set_defaults(func=cmd_dispatch)
+
+    # run (dispatch + poll until done, retry on failure; cursor only)
+    p_run = sub.add_parser(
+        "run",
+        help="Dispatch with cursor mode, poll until done, retry on failure (over and over until success)",
+    )
+    p_run.add_argument("feature", help="Feature request description")
+    p_run.add_argument("--plan", help="Path to a plan file (markdown)")
+    p_run.add_argument("--builder", help="Force builder type")
+    p_run.add_argument("--repo-path", help="Local repo path for cursor mode")
+    p_run.add_argument("--repo-url", help="Git repo URL (cursor mode)")
+    p_run.add_argument("--mode", choices=["cursor"], default="cursor", help="Must be cursor")
+    p_run.add_argument("--retry", type=int, default=0, help="Number of retries after failure (default 0)")
+    p_run.add_argument("--poll-interval", type=float, default=5, help="Seconds between status polls (default 5)")
+    p_run.set_defaults(func=cmd_run)
+
+    # update-windows
+    p_update_win = sub.add_parser(
+        "update-windows",
+        help="SSH to Windows and run git pull in the swarm repo; optionally restart cursor worker",
+    )
+    p_update_win.add_argument(
+        "--repo-path",
+        default="",
+        help="Windows repo path (default: C:\\Users\\<WINDOWS_USER>\\repos\\swarm)",
+    )
+    p_update_win.add_argument(
+        "--restart-worker",
+        action="store_true",
+        help="After pull, run cursor-worker.ps1 stop then start",
+    )
+    p_update_win.set_defaults(func=cmd_update_windows)
 
     # status
     p_status = sub.add_parser("status", help="Check task status")
