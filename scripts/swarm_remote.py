@@ -139,6 +139,7 @@ def cmd_dispatch(args):
         repo_url=args.repo_url or "",
         execution_mode=mode,
         wait_for_completion=wait_for_completion,
+        skip_llm=getattr(args, "skip_llm", False),
     )
     print(json.dumps(result, indent=2))
     if mode == "cursor" and not wait_for_completion:
@@ -275,6 +276,7 @@ def cmd_run(args):
             repo_url=args.repo_url or "",
             execution_mode=mode,
             wait_for_completion=False,
+            skip_llm=getattr(args, "skip_llm", False),
         )
         task_id = result.get("task_id", "")
         if not task_id:
@@ -429,6 +431,12 @@ def main():
     p_dispatch.add_argument("--mode", choices=["local", "ollama", "cursor"], help="Execution mode")
     p_dispatch.add_argument("--wait", action="store_true", help="Wait for completion in cursor mode")
     p_dispatch.add_argument(
+        "--skip-llm",
+        dest="skip_llm",
+        action="store_true",
+        help="Skip LLM calls (smoke/verify mode). Use for transport verification without Ollama.",
+    )
+    p_dispatch.add_argument(
         "--async",
         dest="async_dispatch",
         action="store_true",
@@ -447,6 +455,12 @@ def main():
     p_run.add_argument("--repo-path", help="Local repo path for cursor mode")
     p_run.add_argument("--repo-url", help="Git repo URL (cursor mode)")
     p_run.add_argument("--mode", choices=["cursor"], default="cursor", help="Must be cursor")
+    p_run.add_argument(
+        "--skip-llm",
+        dest="skip_llm",
+        action="store_true",
+        help="Skip LLM calls (smoke/verify mode). Use for transport verification without Ollama.",
+    )
     p_run.add_argument("--retry", type=int, default=0, help="Number of retries after failure (default 0)")
     p_run.add_argument("--poll-interval", type=float, default=5, help="Seconds between status polls (default 5)")
     p_run.set_defaults(func=cmd_run)

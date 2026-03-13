@@ -59,6 +59,7 @@ class CursorWorkerClient:
             "builder_type": payload.get("builder_type", ""),
             "repo_path": payload.get("repo_path", ""),
             "repo_url": payload.get("repo_url", ""),
+            "skip_llm": bool(payload.get("skip_llm", False)),
             "status": "queued",
         }
         self._ensure_remote_dirs()
@@ -420,6 +421,8 @@ class CursorWorkerService:
             sub_env = {k: v for k, v in os.environ.items() if k != "SWARM_DAEMON_LOG_FILE"}
             sub_env["SWARM_VERBOSE"] = "0"  # Disable CrewAI Rich output to avoid closed-file writes
             sub_env.setdefault("PYTHONIOENCODING", "utf-8")  # Fix Windows charmap/emoji encoding errors
+            if payload.get("skip_llm"):
+                sub_env["SWARM_SMOKE_SKIP_LLM"] = "1"  # Skip LLM for smoke/verify tasks (no Ollama needed)
             # Inherit stdout/stderr so child writes to parent's log file (avoids DEVNULL/closed-file issues)
             proc = subprocess.run(
                 [sys.executable, str(run_script), payload_path, result_path],

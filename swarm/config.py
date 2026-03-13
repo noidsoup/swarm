@@ -80,6 +80,10 @@ class SwarmConfig:
         kwargs = {"model": model}
         if model.startswith("ollama/"):
             kwargs["base_url"] = self.ollama_base_url
+        # Increase timeout for Ollama cold-start and heavy inference (default 900s)
+        timeout = int(os.getenv("OLLAMA_REQUEST_TIMEOUT", "900"))
+        if timeout > 0:
+            kwargs["timeout"] = timeout
         return LLM(**kwargs)
 
     def worker_llm(self):

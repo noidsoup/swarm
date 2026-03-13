@@ -298,9 +298,13 @@ $env:WINDOWS_CURSOR_TASK_TIMEOUT = "3600"
 
 7) **"I/O operation on closed file" on Windows**
 
-- The worker runs as a daemon child with stdout/stderr redirected to a log file; something may still write to a closed stream.
+- Fixed (2025-03): subprocess now redirects stdout/stderr to devnull before imports; payload files use repo's `.swarm/worker/` (not system temp) to avoid PermissionError on inbox.
 - To see the full traceback: on Windows, stop the daemon (`.\\scripts\\cursor-worker.ps1 stop`), put one task in the inbox (dispatch from Mac without `--wait`), then run `python scripts/cursor_worker.py --once` in a console. The exception and traceback will print to the console.
 - Check the daemon log: `Get-Content "$env:TEMP\\swarm-worker.log" -Tail 200`.
+
+8) **Tasks stuck in "queued" on Windows**
+
+- Worker may have crashed or not be polling. On Windows: `.\scripts\cursor-worker.ps1 status`; check `Get-Content "$env:TEMP\swarm-worker.log" -Tail 100` for errors.
 
 ### Windows agent: apply latest Mac-side status/cancel reliability fixes
 
