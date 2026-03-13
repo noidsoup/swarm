@@ -25,6 +25,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
+from swarm.config import default_ollama_base_url
 from swarm.task_models import TaskRequest, TaskStatus
 from swarm.task_store import store
 
@@ -40,8 +41,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-from swarm.config import default_ollama_base_url
 
 SWARM_API_TOKEN = os.getenv("SWARM_API_TOKEN", "")
 

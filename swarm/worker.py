@@ -12,7 +12,6 @@ import os
 import signal
 import subprocess
 import threading
-import time
 import traceback
 from pathlib import Path
 from urllib.parse import urlparse

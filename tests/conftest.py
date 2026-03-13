@@ -19,6 +19,8 @@ from swarm.config import cfg
 
 @pytest.fixture(autouse=True)
 def restore_cfg() -> Iterator[None]:
+    # Legacy guard for tests that still mutate the shared cfg singleton.
+    # New runtime paths should prefer cfg.copy() for per-task overrides.
     original = {
         "repo_root": cfg.repo_root,
         "auto_commit": cfg.auto_commit,

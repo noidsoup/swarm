@@ -88,17 +88,19 @@ class Dispatcher:
     ) -> dict[str, Any]:
         from swarm.flow import WorkerSwarmFlow
 
+        task_cfg = self.cfg.copy() if hasattr(self.cfg, "copy") else self.cfg
         if repo_path:
-            self.cfg.repo_root = repo_path
-        self.cfg.auto_commit = False
+            task_cfg.repo_root = repo_path
+        task_cfg.auto_commit = False
 
         smoke_profile = _is_smoke_task(plan=plan, feature_name=feature_name)
-        with _working_directory(repo_path or self.cfg.repo_root), _local_execution_profile(
-            self.cfg,
-            smoke_profile=smoke_profile,
+        with (
+            _working_directory(repo_path or task_cfg.repo_root),
+            _with_local_cfg_overrides(task_cfg),
+            _local_execution_profile(task_cfg, smoke_profile=smoke_profile),
         ):
             task_id = new_task_id()
-            artifact_dir = ensure_artifact_dir(repo_path or self.cfg.repo_root, task_id)
+            artifact_dir = ensure_artifact_dir(repo_path or task_cfg.repo_root, task_id)
             effective_plan = _smoke_task_plan(plan=plan, feature_name=feature_name) if smoke_profile else plan
             flow = WorkerSwarmFlow(
                 plan=effective_plan,
@@ -238,6 +240,45 @@ def _local_execution_profile(cfg: Any, *, smoke_profile: bool):
     finally:
         cfg.worker_model = original_worker_model
         cfg.max_review_loops = original_max_review_loops
+
+
+@contextmanager
+def _with_local_cfg_overrides(task_cfg: Any):
+    """Temporarily bind flow/agent module-level cfg references to task cfg.
+
+    Flow and agent modules import cfg as a module global, so local dispatch uses
+    this context to route per-run config changes (e.g., smoke model overrides)
+    without mutating the process-wide singleton.
+    """
+    if not hasattr(task_cfg, "llm_for_role"):
+        yield
+        return
+
+    flow_module = None
+    agents_module = None
+    original_flow_cfg = None
+    original_agents_cfg = None
+    try:
+        import swarm.flow as flow_module  # local import avoids import-time side effects
+        original_flow_cfg = getattr(flow_module, "cfg", None)
+        flow_module.cfg = task_cfg
+    except Exception:
+        flow_module = None
+
+    try:
+        import swarm.agents as agents_module
+        original_agents_cfg = getattr(agents_module, "cfg", None)
+        agents_module.cfg = task_cfg
+    except Exception:
+        agents_module = None
+
+    try:
+        yield
+    finally:
+        if flow_module is not None and original_flow_cfg is not None:
+            flow_module.cfg = original_flow_cfg
+        if agents_module is not None and original_agents_cfg is not None:
+            agents_module.cfg = original_agents_cfg
 
 
 def _is_smoke_task(*, plan: str, feature_name: str) -> bool:
