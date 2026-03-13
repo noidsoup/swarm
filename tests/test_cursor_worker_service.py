@@ -62,6 +62,7 @@ class DummyDispatcher:
         repo_path: str = "",
         repo_url: str = "",
         execution_mode: str = "",
+        skip_llm: bool = False,
     ) -> dict:
         self.calls.append(
             {

@@ -79,8 +79,28 @@ This repo supports three patterns:
 ### Recommended for web dev: most reliable paths
 
 1. **Path B (API + worker)** — Most robust. On Windows: `uvicorn swarm.api:app --host 0.0.0.0 --port 9000` and `python -m swarm.worker`. On Mac: set `SWARM_URL=http://<windows-ip>:9000` and `DEFAULT_EXECUTION_MODE=ollama`, then `swarm-remote submit "feature"`. No daemon spawn, no cursor transport; standard processes.
-2. **Path A (remote Ollama)** — Mac runs swarm; set `OLLAMA_BASE_URL=http://<windows-ip>:11434`. Inference on Windows, orchestration on Mac.
+2. **Path A (remote Ollama)** — Mac runs swarm; inference on Windows, orchestration on Mac.
+   - **If `curl http://<windows-ip>:11434/api/tags` returns `{"models":[]}`** — Windows Ollama binds to 127.0.0.1 only. Use SSH tunnel: `./scripts/ollama-tunnel.sh` then `OLLAMA_BASE_URL=http://localhost:11434`.
+   - **If models are visible** — set `OLLAMA_BASE_URL=http://<windows-ip>:11434` directly.
 3. **Path C (cursor transport)** — Use when Path B is not available. If you hit "I/O operation on closed file", try Path B instead.
+
+### Cursor mode with cloud models (no Ollama)
+
+Cursor mode can run without Ollama by using cloud models. **On Windows** (where the worker runs), create or edit `.env` in the swarm repo:
+
+```bash
+WORKER_MODEL=gpt-4o-mini
+OPENAI_API_KEY=sk-...
+```
+
+Or use Anthropic:
+
+```bash
+WORKER_MODEL=anthropic/claude-sonnet-4-20250514
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Then start the worker with `.\scripts\cursor-worker.ps1 start` (no `-Fast`). No Ollama required. See `.env.example` for full options.
 
 ### Cursor mode required env vars (dispatcher side)
 
@@ -128,11 +148,18 @@ Verify Mac→Windows cursor transport **without** Ollama running:
    python3 scripts/swarm_remote.py run "cursor smoke test" --mode cursor --skip-llm --repo-path "C:/Users/<you>/repos/swarm"
    ```
 
-Expect `status: complete` and `build_summary` containing `SMOKE_OK` within ~10–15 seconds.
+Expect `status: complete` and `build_summary` containing `SMOKE_OK` within ~20–35 seconds. If the daemon is not running, `run` will automatically invoke `process-once` via SSH after ~15s of queued status to drain the task.
+
+To manually drain one task when the daemon is not running:
+```bash
+python3 scripts/swarm_remote.py process-once --fast
+```
 
 ### Windows "ready" sequence for real cursor runs
 
-Run this on Windows before Mac dispatches a real task. Default task timeout is **3600s**; override only if you need longer:
+Run this on Windows before Mac dispatches a real task. Default task timeout is **3600s**; override only if you need longer.
+
+**Prerequisite:** `.env` in the swarm repo must have `WORKER_MODEL` and API key (e.g. `gpt-4o-mini` + `OPENAI_API_KEY`). No Ollama needed for cloud models.
 
 ```powershell
 cd C:\Users\<you>\repos\swarm
