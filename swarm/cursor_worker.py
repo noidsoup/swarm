@@ -394,7 +394,7 @@ class CursorWorkerService:
             )
         except Exception as exc:
             error_holder["error"] = exc
-            error_holder["traceback"] = traceback.format_exc()
+            error_holder["traceback"] = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
 
     def _heartbeat_loop(
         self,
