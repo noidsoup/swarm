@@ -53,19 +53,35 @@ class _TeeStream:
         self._streams = [s for s in streams if s is not None]
 
     def write(self, data: str) -> int:
+        dead = []
         for stream in self._streams:
             try:
                 stream.write(data)
             except (OSError, ValueError):
                 pass  # stream may be closed after redirect restored
+            except Exception as e:
+                if "closed" in str(e).lower():
+                    dead.append(stream)
+                else:
+                    raise
+        for stream in dead:
+            self._streams.remove(stream)
         return len(data)
 
     def flush(self) -> None:
+        dead = []
         for stream in self._streams:
             try:
                 stream.flush()
             except (OSError, ValueError):
                 pass
+            except Exception as e:
+                if "closed" in str(e).lower():
+                    dead.append(stream)
+                else:
+                    raise
+        for stream in dead:
+            self._streams.remove(stream)
 
 
 def _build_phase_log_path(run_artifacts_dir: str) -> Path | None:

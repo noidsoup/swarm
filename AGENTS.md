@@ -38,6 +38,7 @@ When using cursor mode (Mac dispatches, Windows runs the worker), use `scripts/s
 - **dispatch** — Submit a task (async by default); returns `task_id`. Use `--wait` to block until done.
 - **run** — Cursor-only: dispatch, poll status until terminal state, and **retry on failure** (e.g. `--retry 5`). Use for "run until success."
 - **update-windows** — SSH to Windows and run `git checkout main && git pull` in the swarm repo; use `--restart-worker` to restart the cursor worker after pull. Requires `WINDOWS_HOST`, `WINDOWS_USER` (and optionally `WINDOWS_SSH_KEY`).
+- **Never ask the user for Windows connection details.** They are in repo `.env` (and in `AI_SESSION_MEMORY.md` / runbook). Use those; if missing, infer from repo docs or session memory, not from the user.
 - **status** / **logs** / **cancel** — Track or cancel a task by `task_id`. These fall back to cursor outbox when the API is unreachable.
 
 ## Documentation Canonicals

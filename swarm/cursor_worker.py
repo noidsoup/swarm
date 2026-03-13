@@ -514,8 +514,8 @@ def spawn_cursor_worker_daemon(
         popen_kwargs["start_new_session"] = True
 
     process = subprocess.Popen(command, **popen_kwargs)
-    if log_file and log_handle is not subprocess.DEVNULL:
-        log_handle.close()
+    # Do not close log_handle: the child uses it for stdout/stderr; closing in parent
+    # invalidates the child's stdout on Windows ("I/O operation on closed file").
     if pid_file:
         pid_path = Path(pid_file)
         pid_path.parent.mkdir(parents=True, exist_ok=True)
