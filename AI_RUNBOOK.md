@@ -107,6 +107,81 @@ Then dispatch from Mac:
 WINDOWS_CURSOR_TIMEOUT=900 WINDOWS_CURSOR_HEARTBEAT_TIMEOUT=180 WINDOWS_SSH_KEY="$HOME/.ssh/id_ed25519_nopass" WINDOWS_HOST=<windows-ip> WINDOWS_USER=<windows-user> python3 scripts/swarm_remote.py dispatch "<task prompt>" --mode cursor --repo-path "C:/Users/<you>/AppData/Local/Temp/smoke-repo"
 ```
 
+### Detailed Windows operator instructions (copy/paste)
+
+Use this full sequence when you want Windows to be the execution machine and avoid stale worker state.
+
+1) **Open PowerShell on Windows and refresh repo**
+
+```powershell
+cd C:\Users\<you>\repos\swarm
+git checkout main
+git pull
+```
+
+2) **Hard-stop old worker and clear smoke mode**
+
+```powershell
+.\scripts\cursor-worker.ps1 stop
+Remove-Item Env:SWARM_SMOKE_SKIP_LLM -ErrorAction SilentlyContinue
+```
+
+3) **Set real-run timeout in the current shell**
+
+```powershell
+$env:WINDOWS_CURSOR_TASK_TIMEOUT = "1800"
+echo $env:WINDOWS_CURSOR_TASK_TIMEOUT
+```
+
+4) **Start worker and verify**
+
+```powershell
+.\scripts\cursor-worker.ps1 start
+.\scripts\cursor-worker.ps1 status
+```
+
+Expected output:
+- `Started worker PID ... (timeout 1800s)` (or whatever you set)
+- `Worker running PID ...`
+
+5) **Watch logs while Mac task runs (optional but recommended)**
+
+```powershell
+Get-Content "$env:TEMP\swarm-worker.log" -Wait
+```
+
+6) **After Mac dispatch returns, verify result payload exists**
+
+```powershell
+Get-ChildItem "$HOME\.swarm\outbox" | Sort-Object LastWriteTime -Descending | Select-Object -First 3 Name,LastWriteTime
+```
+
+7) **If still timing out at 600s**
+
+- You are likely running an old process or old script copy.
+- Repeat steps 1-4 and confirm start output prints your timeout value, not `600s`.
+- If needed, kill stale process manually, then restart:
+
+```powershell
+Get-Process python | Where-Object { $_.Path -like "*python*" } | Select-Object Id,ProcessName,Path
+# then stop the specific stale PID only if it is the old worker
+Stop-Process -Id <pid> -Force
+```
+
+8) **If worker starts but tasks still fail**
+
+- Confirm Ollama is reachable on Windows:
+
+```powershell
+curl http://127.0.0.1:11434/api/tags
+```
+
+- Check worker log tail for model load/runtime errors:
+
+```powershell
+Get-Content "$env:TEMP\swarm-worker.log" -Tail 200
+```
+
 ## 5) MCP Operations
 
 From `swarm/mcp_server.py`, supported tools:
