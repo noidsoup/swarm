@@ -112,6 +112,10 @@ class CursorWorkerClient:
         return cmd
 
     def _run_ssh(self, remote_cmd: str, timeout: int = 30) -> subprocess.CompletedProcess[str]:
+        # Windows SSH: wrap in cmd /c for consistent Python execution (avoids PowerShell quirks)
+        if self.connection.host and os.getenv("SWARM_SSH_USE_CMD", "1") == "1":
+            escaped = remote_cmd.replace('"', '\\"')
+            remote_cmd = f'cmd /c "{escaped}"'
         return subprocess.run(
             self._ssh_base() + [remote_cmd],
             check=True,
@@ -121,13 +125,27 @@ class CursorWorkerClient:
         )
 
     def _ensure_remote_dirs(self) -> None:
+        timeout = int(os.getenv("SWARM_SSH_TIMEOUT", "90"))
+        # Windows: use mkdir (no Python); Unix: use Python
+        root = self.remote_root.rstrip("/")
+        if self.connection.host:
+            # Remote is Windows: mkdir with %USERPROFILE%
+            win_cmd = (
+                "mkdir %USERPROFILE%\\.swarm\\inbox 2>nul & "
+                "mkdir %USERPROFILE%\\.swarm\\outbox 2>nul & exit 0"
+            )
+            try:
+                self._run_ssh(win_cmd, timeout=timeout)
+                return
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                pass
         py = (
             "from pathlib import Path; import sys;"
             "root=Path(sys.argv[1]).expanduser();"
             "(root/'inbox').mkdir(parents=True, exist_ok=True);"
             "(root/'outbox').mkdir(parents=True, exist_ok=True)"
         )
-        self._run_ssh(f'python -c "{py}" "{self.remote_root}"', timeout=30)
+        self._run_ssh(f'python -c "{py}" "{self.remote_root}"', timeout=timeout)
 
     def _upload_task(self, task_id: str, envelope: dict[str, Any]) -> None:
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as tmp:
@@ -135,12 +153,13 @@ class CursorWorkerClient:
             tmp_path = tmp.name
         try:
             remote_path = f"{self.connection.user}@{self.connection.host}:{self.remote_root}/inbox/{task_id}.json"
+            ssh_timeout = int(os.getenv("SWARM_SSH_TIMEOUT", "90"))
             subprocess.run(
                 self._scp_base() + [tmp_path, remote_path],
                 check=True,
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=ssh_timeout,
             )
         finally:
             try:
@@ -154,7 +173,8 @@ class CursorWorkerClient:
             "p=Path(sys.argv[1]).expanduser();"
             "print('1' if p.exists() else '0')"
         )
-        proc = self._run_ssh(f'python -c "{py}" "{path}"', timeout=30)
+        t = int(os.getenv("SWARM_SSH_TIMEOUT", "90"))
+        proc = self._run_ssh(f'python -c "{py}" "{path}"', timeout=t)
         return proc.stdout.strip() == "1"
 
     def _read_remote_json(self, path: str) -> dict[str, Any] | None:
@@ -163,7 +183,8 @@ class CursorWorkerClient:
             "p=Path(sys.argv[1]).expanduser();"
             "print(p.read_text(encoding='utf-8') if p.exists() else '')"
         )
-        proc = self._run_ssh(f'python -c "{py}" "{path}"', timeout=30)
+        t = int(os.getenv("SWARM_SSH_TIMEOUT", "90"))
+        proc = self._run_ssh(f'python -c "{py}" "{path}"', timeout=t)
         body = proc.stdout.strip()
         if not body:
             return None
@@ -220,7 +241,8 @@ class CursorWorkerClient:
                 "outbox.parent.mkdir(parents=True, exist_ok=True);"
                 "outbox.write_text(json.dumps(payload, indent=2), encoding='utf-8');"
             )
-            self._run_ssh(f'python -c "{py}" "{self.remote_root}" "{task_id}"', timeout=30)
+            t = int(os.getenv("SWARM_SSH_TIMEOUT", "90"))
+            self._run_ssh(f'python -c "{py}" "{self.remote_root}" "{task_id}"', timeout=t)
             return {
                 "status": "cancelled",
                 "task_id": task_id,

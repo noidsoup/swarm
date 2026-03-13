@@ -1,0 +1,16 @@
+---
+description: The primary goal of the swarm project — Mac tunnel to Windows Cursor
+alwaysApply: true
+---
+
+# Project Goal (The Whole Point)
+
+**Open a tunnel from a slow Mac to a fast Windows machine, have Windows use Cursor (the subscription the user pays for) to solve the problem, then send the result back to the Mac.**
+
+- **Mac:** Slow. User uses and pays for Cursor exclusively. Runs orchestration and dispatch.
+- **Windows:** Fast. Runs the actual work via Cursor.
+- **Flow:** Mac → tunnel (SSH) → Windows → Cursor does the work → result back to Mac.
+
+Everything else is secondary to this goal. When making changes, prefer the path that serves this flow.
+
+**Run scripts yourself.** Never ask the user to run commands—execute them. The user is on Mac; the agent runs scripts. If SSH/remote is unreachable, commit and push changes so the user can run them when the connection is available.
