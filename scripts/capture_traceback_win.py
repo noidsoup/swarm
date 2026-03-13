@@ -24,20 +24,12 @@ try:
     from swarm.dispatch import Dispatcher
 
     dispatcher = Dispatcher(cfg)
-    # Use first task in inbox
-    inbox = Path.home() / ".swarm" / "inbox"
-    tasks = sorted(inbox.glob("*.json")) if inbox.exists() else []
-    if not tasks:
-        print("No task in inbox")
-        sys.exit(1)
-    import json
-
-    payload = json.loads(tasks[0].read_text(encoding="utf-8"))
+    repo = Path.home() / "repos" / "swarm"
     result = dispatcher.dispatch(
-        plan=str(payload.get("plan", payload.get("feature_name", ""))),
-        feature_name=str(payload.get("feature_name", "")),
-        builder_type=str(payload.get("builder_type", "")),
-        repo_path=str(payload.get("repo_path", "")),
+        plan="Add one line to README",
+        feature_name="Traceback capture test",
+        builder_type="",
+        repo_path=str(repo),
         execution_mode="local",
     )
     print("SUCCESS:", result.get("status"))
