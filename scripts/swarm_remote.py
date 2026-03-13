@@ -284,6 +284,7 @@ def cmd_run(args):
             sys.exit(1)
         print(f"Attempt {attempt}/{max_attempts}  task_id={task_id}  (poll every {poll_interval}s)")
 
+        queued_polls = 0
         while True:
             time.sleep(poll_interval)
             payload = _get_task_status(task_id)
@@ -294,6 +295,19 @@ def cmd_run(args):
             if status in terminal_fail:
                 print(f"Terminal state: {status}  task_id={task_id}")
                 break
+            if status == "queued":
+                queued_polls += 1
+                # If queued for 3+ polls, daemon may not be running; run process_once to drain
+                if queued_polls >= 3:
+                    try:
+                        process_once_args = argparse.Namespace(
+                            repo_path=args.repo_path or "",
+                            fast=getattr(args, "skip_llm", False),
+                        )
+                        cmd_process_once(process_once_args)
+                        queued_polls = 0
+                    except Exception:
+                        pass
 
         if attempt < max_attempts:
             print("Retrying...")
@@ -404,6 +418,25 @@ def cmd_update_windows(args):
     print("Done.")
 
 
+def cmd_process_once(args):
+    """Run cursor worker process_once on Windows via SSH. Use to drain queue when daemon is not running."""
+    host = cfg.windows_host or os.getenv("WINDOWS_HOST", "")
+    user = cfg.windows_user or os.getenv("WINDOWS_USER", "")
+    if not host or not user:
+        raise SystemExit("WINDOWS_HOST and WINDOWS_USER are required (set in env or .env).")
+    key = (cfg.windows_ssh_key or os.getenv("WINDOWS_SSH_KEY", "")).strip()
+    repo_path = (getattr(args, "repo_path", None) or "").strip() or f"C:\\Users\\{user}\\repos\\swarm"
+    env_prefix = "set SWARM_SMOKE_SKIP_LLM=1 && " if getattr(args, "fast", False) else ""
+    remote_cmd = (
+        f'cmd /c "cd /d {repo_path} && {env_prefix}python scripts/cursor_worker.py --once --task-timeout 60"'
+    )
+    ssh_cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15"]
+    if key:
+        ssh_cmd.extend(["-i", key])
+    ssh_cmd.extend([f"{user}@{host}", remote_cmd])
+    subprocess.run(ssh_cmd, check=True)
+
+
 def main():
     global SWARM_URL
     parser = argparse.ArgumentParser(
@@ -487,6 +520,23 @@ def main():
         help="With --restart-worker, start worker with -Fast (SWARM_SMOKE_SKIP_LLM=1) for smoke tests",
     )
     p_update_win.set_defaults(func=cmd_update_windows)
+
+    # process-once (drain one task from cursor inbox when daemon is not running)
+    p_process_once = sub.add_parser(
+        "process-once",
+        help="Run cursor worker process_once on Windows via SSH. Use to drain queue when daemon is not running.",
+    )
+    p_process_once.add_argument(
+        "--repo-path",
+        default="",
+        help="Windows repo path (default: C:\\Users\\<WINDOWS_USER>\\repos\\swarm)",
+    )
+    p_process_once.add_argument(
+        "--fast",
+        action="store_true",
+        help="Set SWARM_SMOKE_SKIP_LLM=1 for smoke tasks",
+    )
+    p_process_once.set_defaults(func=cmd_process_once)
 
     # status
     p_status = sub.add_parser("status", help="Check task status")

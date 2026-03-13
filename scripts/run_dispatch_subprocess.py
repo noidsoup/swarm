@@ -32,6 +32,9 @@ def main() -> None:
     payload_path = Path(sys.argv[1])
     result_path = Path(sys.argv[2])
     payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    # Ensure skip_llm from payload is honored even if env wasn't propagated through daemon spawn
+    if payload.get("skip_llm"):
+        os.environ["SWARM_SMOKE_SKIP_LLM"] = "1"
     try:
         from swarm.config import cfg
         from swarm.dispatch import Dispatcher
@@ -43,6 +46,7 @@ def main() -> None:
             repo_path=str(payload.get("repo_path", "")),
             repo_url=str(payload.get("repo_url", "")),
             execution_mode="local",
+            skip_llm=bool(payload.get("skip_llm", False)),
         )
     except Exception as exc:
         import traceback

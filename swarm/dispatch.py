@@ -63,6 +63,7 @@ class Dispatcher:
                 feature_name=feature_name,
                 builder_type=builder_type,
                 repo_path=repo_path,
+                skip_llm=skip_llm,
             )
         if mode == "ollama":
             return self._dispatch_ollama(
@@ -87,6 +88,7 @@ class Dispatcher:
         feature_name: str,
         builder_type: str,
         repo_path: str,
+        skip_llm: bool = False,
     ) -> dict[str, Any]:
         from swarm.flow import WorkerSwarmFlow
 
@@ -113,7 +115,10 @@ class Dispatcher:
 
             def _run_flow() -> None:
                 if smoke_profile:
-                    if os.getenv("SWARM_SMOKE_SKIP_LLM", "").lower() in ("1", "true", "yes"):
+                    use_skip = skip_llm or os.getenv(
+                        "SWARM_SMOKE_SKIP_LLM", ""
+                    ).lower() in ("1", "true", "yes")
+                    if use_skip:
                         flow.state.build_summary = (
                             "STATUS: SMOKE_OK\nNOTE: Pipeline check only (SWARM_SMOKE_SKIP_LLM=1)."
                         )
