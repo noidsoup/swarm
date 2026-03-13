@@ -46,17 +46,25 @@ logger = logging.getLogger(__name__)
 
 
 class _TeeStream:
+    """Tee writes to multiple streams; tolerates closed streams (e.g. after build_log_file.close())."""
+
     def __init__(self, *streams):
-        self._streams = [stream for stream in streams if stream is not None]
+        self._streams = [s for s in streams if s is not None]
 
     def write(self, data: str) -> int:
         for stream in self._streams:
-            stream.write(data)
+            try:
+                stream.write(data)
+            except (OSError, ValueError):
+                pass  # stream may be closed after redirect restored
         return len(data)
 
     def flush(self) -> None:
         for stream in self._streams:
-            stream.flush()
+            try:
+                stream.flush()
+            except (OSError, ValueError):
+                pass
 
 
 def _build_phase_log_path(run_artifacts_dir: str) -> Path | None:
