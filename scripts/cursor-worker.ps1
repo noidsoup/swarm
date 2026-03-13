@@ -1,15 +1,17 @@
 # Start/stop the cursor worker daemon for Mac->Windows smoke tests.
-# Usage: .\scripts\cursor-worker.ps1 start [--fast]
+# Usage: .\scripts\cursor-worker.ps1 start [--fast] [--cursor-agent]
 #        .\scripts\cursor-worker.ps1 stop
 #        .\scripts\cursor-worker.ps1 status
 # --fast: set SWARM_SMOKE_SKIP_LLM=1 and 60s timeout for quick pipeline check.
+# --cursor-agent: use Cursor CLI agent (your subscription), no Ollama/OpenAI API key.
 
 param(
     [Parameter(Position = 0)]
     [ValidateSet("start", "stop", "status")]
     [string]$Command = "status",
 
-    [switch]$Fast
+    [switch]$Fast,
+    [switch]$CursorAgent
 )
 
 $PidFile = "$env:TEMP\swarm-worker.pid"
@@ -58,6 +60,9 @@ function Start-Worker {
         }
     }
 
+    if ($CursorAgent) {
+        $env:SWARM_USE_CURSOR_AGENT = "1"
+    }
     if ($Fast) {
         $env:SWARM_SMOKE_SKIP_LLM = "1"
         if (-not $env:WINDOWS_CURSOR_TASK_TIMEOUT) { $env:WINDOWS_CURSOR_TASK_TIMEOUT = "60" }
@@ -73,6 +78,7 @@ function Start-Worker {
         $newPid = python scripts/cursor_worker.py --daemon --poll-interval 2 --task-timeout $Timeout --log-file $LogFile --pid-file $PidFile
         Write-Host "Started worker PID $newPid (timeout ${Timeout}s)"
         if ($Fast) { Write-Host "Fast smoke: SWARM_SMOKE_SKIP_LLM=1" }
+        if ($CursorAgent) { Write-Host "Cursor agent: SWARM_USE_CURSOR_AGENT=1 (uses Cursor subscription)" }
     } finally {
         Pop-Location
     }

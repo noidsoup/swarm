@@ -404,9 +404,13 @@ class CursorWorkerService:
             error_holder["traceback"] = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
 
     def _dispatch_via_subprocess(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Run dispatch in a subprocess with isolated stdout/stderr (Windows daemon fix)."""
+        """Run dispatch in subprocess (Windows daemon fix). Use Cursor CLI when SWARM_USE_CURSOR_AGENT=1."""
         script_dir = Path(__file__).resolve().parent.parent
-        run_script = script_dir / "scripts" / "run_dispatch_subprocess.py"
+        use_cursor_agent = os.getenv("SWARM_USE_CURSOR_AGENT", "").lower() in ("1", "true", "yes")
+        if use_cursor_agent and not payload.get("skip_llm"):
+            run_script = script_dir / "scripts" / "run_cursor_agent.py"
+        else:
+            run_script = script_dir / "scripts" / "run_dispatch_subprocess.py"
         if not run_script.exists():
             raise RuntimeError(f"Dispatch subprocess script not found: {run_script}")
 

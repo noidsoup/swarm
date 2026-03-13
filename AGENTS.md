@@ -9,7 +9,9 @@
 The goal is to run complex AI tasks from the Mac and have the heavy work happen on the Windows machine (e.g. Docker, services, or GPU there). You can use **Ollama** (remote on Windows) or **Cursor AI** from the Mac; the local LLM on Windows is **optional** — just one path.
 
 - **Path A — Remote Ollama:** Mac runs the swarm (orchestration); set `OLLAMA_BASE_URL` to the Windows Ollama URL. All model inference runs on Windows; no swarm process required on Windows, only Ollama.
-- **Path B — Cursor / worker on Windows:** Mac sends tasks (e.g. cursor mode inbox/outbox, or API); Windows runs the worker. Use cloud models (`gpt-4o-mini` + `OPENAI_API_KEY`) — no Ollama required. Full pipeline runs on Windows; Mac triggers and polls.
+- **Path B — Cursor / worker on Windows:** Mac sends tasks (e.g. cursor mode inbox/outbox, or API); Windows runs the worker.
+  - **Cursor Agent (no API key):** `SWARM_USE_CURSOR_AGENT=1` or `cursor-worker.ps1 start -CursorAgent`. Uses Cursor CLI agent (your subscription). Requires `agent login` on Windows.
+  - **Cloud models:** `gpt-4o-mini` + `OPENAI_API_KEY` — no Ollama required.
 - **Path C — Cursor AI from Mac:** Use Cursor’s models from the Mac (Docker, MCP, or other integration) with Windows as the execution or inference target where needed. Local LLM on Windows is optional.
 
 ## Agent Conduct

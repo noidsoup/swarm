@@ -406,8 +406,13 @@ def cmd_update_windows(args):
     # Run in cmd.exe so && works (default SSH shell on Windows may be PowerShell)
     remote_cmd = f'cmd /c "cd /d {repo_path} && git checkout main && git pull'
     if getattr(args, "restart_worker", False):
-        fast_arg = " -Fast" if getattr(args, "fast", False) else ""
-        remote_cmd += f" && powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\cursor-worker.ps1 stop && powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\cursor-worker.ps1 start{fast_arg}"
+        extra = []
+        if getattr(args, "fast", False):
+            extra.append("-Fast")
+        if getattr(args, "cursor_agent", False):
+            extra.append("-CursorAgent")
+        extra_arg = " " + " ".join(extra) if extra else ""
+        remote_cmd += f" && powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\cursor-worker.ps1 stop && powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\cursor-worker.ps1 start{extra_arg}"
     remote_cmd += '"'
     ssh_cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15"]
     if key:
@@ -518,6 +523,12 @@ def main():
         "--fast",
         action="store_true",
         help="With --restart-worker, start worker with -Fast (SWARM_SMOKE_SKIP_LLM=1) for smoke tests",
+    )
+    p_update_win.add_argument(
+        "--cursor-agent",
+        dest="cursor_agent",
+        action="store_true",
+        help="With --restart-worker, use Cursor CLI agent (your subscription), no Ollama/OpenAI",
     )
     p_update_win.set_defaults(func=cmd_update_windows)
 

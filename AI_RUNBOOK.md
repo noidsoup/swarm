@@ -132,6 +132,28 @@ Add `--fast` with `--restart-worker` for smoke tests (starts worker with `SWARM_
 python3 scripts/swarm_remote.py update-windows --restart-worker --fast
 ```
 
+### Cursor Agent mode (uses your Cursor subscription, no API key)
+
+Use Cursor's built-in AI instead of Ollama or OpenAI. Requires Cursor CLI on Windows.
+
+1. **Install Cursor CLI on Windows:**
+   ```powershell
+   irm 'https://cursor.com/install?win32=true' | iex
+   agent login
+   ```
+
+2. **Start worker with Cursor agent:**
+   ```powershell
+   .\scripts\cursor-worker.ps1 stop
+   .\scripts\cursor-worker.ps1 start -CursorAgent
+   ```
+   Or from Mac: `python3 scripts/swarm_remote.py update-windows --restart-worker --cursor-agent`
+
+3. **Dispatch from Mac** (same as usual):
+   ```bash
+   python3 scripts/swarm_remote.py run "Add a login button" --mode cursor --repo-path "C:/Users/<you>/repos/your-project"
+   ```
+
 ### Smoke test without Ollama (quick pipeline verification)
 
 Verify Mac→Windows cursor transport **without** Ollama running:
