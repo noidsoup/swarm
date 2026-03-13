@@ -108,15 +108,34 @@ class Dispatcher:
                 builder_type=builder_type,
             )
             flow.state.run_artifacts_dir = artifact_dir
-            if smoke_profile:
-                if os.getenv("SWARM_SMOKE_SKIP_LLM", "").lower() in ("1", "true", "yes"):
-                    flow.state.build_summary = (
-                        "STATUS: SMOKE_OK\nNOTE: Pipeline check only (SWARM_SMOKE_SKIP_LLM=1)."
-                    )
+
+            def _run_flow() -> None:
+                if smoke_profile:
+                    if os.getenv("SWARM_SMOKE_SKIP_LLM", "").lower() in ("1", "true", "yes"):
+                        flow.state.build_summary = (
+                            "STATUS: SMOKE_OK\nNOTE: Pipeline check only (SWARM_SMOKE_SKIP_LLM=1)."
+                        )
+                    else:
+                        flow.run_selected_phases(["build"])
                 else:
-                    flow.run_selected_phases(["build"])
-            else:
-                flow.kickoff()
+                    flow.kickoff()
+
+            try:
+                _run_flow()
+            except (ValueError, OSError) as exc:
+                if "closed" in str(exc).lower() and task_cfg.verbose:
+                    # Retry with verbose=False to avoid CrewAI/Rich writing to closed streams
+                    task_cfg.verbose = False
+                    flow = WorkerSwarmFlow(
+                        plan=effective_plan,
+                        feature_request=feature_name,
+                        builder_type=builder_type,
+                    )
+                    flow.state.run_artifacts_dir = artifact_dir
+                    _run_flow()
+                else:
+                    raise
+
         return {
             "status": "complete",
             "builder": flow._builder,
