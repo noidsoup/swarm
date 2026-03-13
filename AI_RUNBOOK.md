@@ -76,6 +76,12 @@ This repo supports three patterns:
 - **B. Remote queue worker:** run API + worker on Windows, dispatch via `execution_mode=ollama`.
 - **C. Cursor transport worker:** run cursor worker service on Windows, dispatch via `execution_mode=cursor`.
 
+### Recommended for web dev: most reliable paths
+
+1. **Path B (API + worker)** — Most robust. On Windows: `uvicorn swarm.api:app --host 0.0.0.0 --port 9000` and `python -m swarm.worker`. On Mac: set `SWARM_URL=http://<windows-ip>:9000` and `DEFAULT_EXECUTION_MODE=ollama`, then `swarm-remote submit "feature"`. No daemon spawn, no cursor transport; standard processes.
+2. **Path A (remote Ollama)** — Mac runs swarm; set `OLLAMA_BASE_URL=http://<windows-ip>:11434`. Inference on Windows, orchestration on Mac.
+3. **Path C (cursor transport)** — Use when Path B is not available. If you hit "I/O operation on closed file", try Path B instead.
+
 ### Cursor mode required env vars (dispatcher side)
 
 - `WINDOWS_HOST`

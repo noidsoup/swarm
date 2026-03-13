@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 import traceback
 from pathlib import Path
@@ -33,7 +32,7 @@ try:
         execution_mode="local",
     )
     print("SUCCESS:", result.get("status"))
-except Exception as exc:
+except Exception:
     traceback.print_exc(file=sys.stderr)
     sys.stderr.flush()
     sys.exit(1)

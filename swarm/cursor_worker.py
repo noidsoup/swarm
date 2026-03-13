@@ -384,17 +384,63 @@ class CursorWorkerService:
         error_holder: dict[str, Any],
     ) -> None:
         try:
-            result_holder["result"] = self.dispatcher.dispatch(
-                plan=str(payload.get("plan", "")),
-                feature_name=str(payload.get("feature_name", "")),
-                builder_type=str(payload.get("builder_type", "")),
-                repo_path=str(payload.get("repo_path", "")),
-                repo_url=str(payload.get("repo_url", "")),
-                execution_mode="local",
-            )
+            if os.name == "nt" and os.getenv("SWARM_DAEMON_LOG_FILE"):
+                # Run flow in subprocess with stdout/stderr=DEVNULL to avoid "I/O operation on
+                # closed file" from CrewAI/Rich when daemon has redirected streams.
+                result_holder["result"] = self._dispatch_via_subprocess(payload)
+            else:
+                result_holder["result"] = self.dispatcher.dispatch(
+                    plan=str(payload.get("plan", "")),
+                    feature_name=str(payload.get("feature_name", "")),
+                    builder_type=str(payload.get("builder_type", "")),
+                    repo_path=str(payload.get("repo_path", "")),
+                    repo_url=str(payload.get("repo_url", "")),
+                    execution_mode="local",
+                )
         except Exception as exc:
             error_holder["error"] = exc
             error_holder["traceback"] = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+
+    def _dispatch_via_subprocess(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Run dispatch in a subprocess with isolated stdout/stderr (Windows daemon fix)."""
+        script_dir = Path(__file__).resolve().parent.parent
+        run_script = script_dir / "scripts" / "run_dispatch_subprocess.py"
+        if not run_script.exists():
+            raise RuntimeError(f"Dispatch subprocess script not found: {run_script}")
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as p:
+            json.dump(payload, p, indent=2)
+            payload_path = p.name
+        result_path = payload_path + ".result"
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(run_script), payload_path, result_path],
+                cwd=str(script_dir),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=int(self.task_timeout_seconds) if self.task_timeout_seconds > 0 else 3600,
+                env={k: v for k, v in os.environ.items() if k != "SWARM_DAEMON_LOG_FILE"},
+            )
+            if not Path(result_path).exists():
+                raise RuntimeError(
+                    f"Dispatch subprocess exited with code {proc.returncode} but left no result file"
+                )
+            result = json.loads(Path(result_path).read_text(encoding="utf-8"))
+            if proc.returncode != 0 and "error" not in result:
+                result.setdefault("error", f"Subprocess exited with code {proc.returncode}")
+                result["status"] = "error"
+            return result
+        finally:
+            try:
+                os.unlink(payload_path)
+            except OSError:
+                pass
+            try:
+                os.unlink(result_path)
+            except OSError:
+                pass
 
     def _heartbeat_loop(
         self,
@@ -508,7 +554,9 @@ def spawn_cursor_worker_daemon(
         log_path.parent.mkdir(parents=True, exist_ok=True)
         if os.name == "nt":
             env["SWARM_DAEMON_LOG_FILE"] = str(log_path.resolve())
-            env["SWARM_VERBOSE"] = "0"  # Disable CrewAI Rich output to avoid "I/O operation on closed file"
+            env["SWARM_VERBOSE"] = "0"
+            env["NO_COLOR"] = "1"
+            env["TERM"] = "dumb"  # Disable CrewAI Rich output to avoid "I/O operation on closed file"
         else:
             log_handle = open(log_path, "a", encoding="utf-8")
 
