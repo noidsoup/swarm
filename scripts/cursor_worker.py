@@ -16,10 +16,19 @@ from swarm.cursor_worker import CursorWorkerService, spawn_cursor_worker_daemon
 
 
 def main() -> None:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    if hasattr(sys.stderr, "reconfigure"):
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    # On Windows daemon child, parent passes log path via env; child opens it so stdout/stderr
+    # stay valid after parent exits (avoids "I/O operation on closed file").
+    log_path = os.getenv("SWARM_DAEMON_LOG_FILE")
+    if log_path:
+        log_file = open(log_path, "a", encoding="utf-8")
+        sys.stdout = log_file
+        sys.stderr = log_file
+
+    if not log_path:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     parser = argparse.ArgumentParser(description="Run the cursor worker inbox consumer.")
     parser.add_argument("--root", default="", help="Queue root directory (defaults to ~/.swarm)")

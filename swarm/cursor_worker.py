@@ -493,11 +493,17 @@ def spawn_cursor_worker_daemon(
     env.setdefault("PYTHONUTF8", "1")
     env.setdefault("PYTHONIOENCODING", "utf-8")
 
+    # On Windows, do not pass parent's log handle to child: parent exits and can invalidate
+    # the child's stdout ("I/O operation on closed file"). Child opens the log file itself
+    # when it sees SWARM_DAEMON_LOG_FILE.
     log_handle = subprocess.DEVNULL
     if log_file:
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_handle = open(log_path, "a", encoding="utf-8")
+        if os.name == "nt":
+            env["SWARM_DAEMON_LOG_FILE"] = str(log_path.resolve())
+        else:
+            log_handle = open(log_path, "a", encoding="utf-8")
 
     popen_kwargs: dict[str, Any] = {
         "stdin": subprocess.DEVNULL,
@@ -514,8 +520,8 @@ def spawn_cursor_worker_daemon(
         popen_kwargs["start_new_session"] = True
 
     process = subprocess.Popen(command, **popen_kwargs)
-    # Do not close log_handle: the child uses it for stdout/stderr; closing in parent
-    # invalidates the child's stdout on Windows ("I/O operation on closed file").
+    if log_file and log_handle is not subprocess.DEVNULL:
+        log_handle.close()
     if pid_file:
         pid_path = Path(pid_file)
         pid_path.parent.mkdir(parents=True, exist_ok=True)
