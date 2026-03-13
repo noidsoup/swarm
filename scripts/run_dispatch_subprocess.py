@@ -10,8 +10,16 @@ Usage: python scripts/run_dispatch_subprocess.py <payload.json> <result.json>
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
+
+# Redirect stdout/stderr to devnull before any swarm/CrewAI imports. The daemon child
+# on Windows has inherited handles that can raise "I/O operation on closed file" when
+# CrewAI/Rich write to them. Replacing them here avoids that entirely.
+_devnull = open(os.devnull, "w", encoding="utf-8")
+sys.stdout = _devnull
+sys.stderr = _devnull
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
