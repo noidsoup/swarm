@@ -385,9 +385,16 @@ class CursorWorkerService:
         error_holder: dict[str, Any],
     ) -> None:
         try:
-            if os.name == "nt" and os.getenv("SWARM_DAEMON_LOG_FILE"):
-                # Run flow in subprocess with stdout/stderr=DEVNULL to avoid "I/O operation on
-                # closed file" from CrewAI/Rich when daemon has redirected streams.
+            use_subprocess = (
+                (os.name == "nt" and os.getenv("SWARM_DAEMON_LOG_FILE"))
+                or (
+                    os.getenv("SWARM_USE_CURSOR_AGENT", "").lower() in ("1", "true", "yes")
+                    and not payload.get("skip_llm")
+                )
+            )
+            if use_subprocess:
+                # Subprocess: avoids CrewAI/closed-file on Windows daemon; or uses Cursor CLI when
+                # SWARM_USE_CURSOR_AGENT=1 (no API key needed).
                 result_holder["result"] = self._dispatch_via_subprocess(payload)
             else:
                 result_holder["result"] = self.dispatcher.dispatch(
