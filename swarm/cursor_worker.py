@@ -14,6 +14,8 @@ import time
 import traceback
 from typing import Any
 
+import requests
+
 from swarm.task_models import new_task_id, utcnow_iso
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,18 @@ def _cursor_agent_requested() -> bool:
     repo_root = Path(__file__).resolve().parent.parent
     marker = repo_root / ".swarm" / "cursor-agent-mode"
     return marker.exists()
+
+
+def _notify_callback(callback_url: str | None, task_id: str, result: dict[str, Any]) -> None:
+    """POST result to callback_url if set. Fire-and-forget; logs errors."""
+    if not callback_url or not isinstance(callback_url, str) or not callback_url.strip():
+        return
+    payload = dict(result)
+    payload.setdefault("task_id", task_id)
+    try:
+        requests.post(callback_url, json=payload, timeout=10)
+    except Exception as exc:
+        logger.warning("Callback POST failed task_id=%s url=%s: %s", task_id, callback_url, exc)
 
 
 def _atomic_replace(src: Path, dst: Path) -> None:
@@ -71,6 +85,8 @@ class CursorWorkerClient:
             "skip_llm": bool(payload.get("skip_llm", False)),
             "status": "queued",
         }
+        if payload.get("callback_url"):
+            envelope["callback_url"] = str(payload["callback_url"])
         self._ensure_remote_dirs()
         self._upload_task(task_id, envelope)
         return task_id
@@ -362,6 +378,7 @@ class CursorWorkerService:
 
         if self._safe_finalize_result(task_id, result, started_at=started_at):
             task_path.unlink(missing_ok=True)
+            _notify_callback(payload.get("callback_url"), task_id, result)
             return True
         return False
 

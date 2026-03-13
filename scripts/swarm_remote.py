@@ -26,6 +26,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import subprocess
 import sys
@@ -237,6 +240,55 @@ def cmd_logs(args):
         print("\nStopped streaming.")
 
 
+def _get_local_ip() -> str:
+    """Return Mac's LAN IP so Windows can reach the callback server."""
+    host = os.getenv("SWARM_CALLBACK_HOST", "").strip()
+    if host:
+        return host
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except OSError:
+        return "127.0.0.1"
+
+
+def _run_callback_server(callback_event: threading.Event, callback_result: list) -> tuple[str, int]:
+    """Start HTTP server for task-done callbacks. Returns (callback_url, port)."""
+    result_holder = callback_result
+
+    class CallbackHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            if self.path.rstrip("/") == "/done" or self.path.startswith("/done?"):
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length) if length else b"{}"
+                try:
+                    data = json.loads(body.decode("utf-8"))
+                    result_holder.append(data)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    result_holder.append({"status": "error", "error": "Invalid callback body"})
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"ok":true}')
+                callback_event.set()
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def log_message(self, format, *args):
+            pass
+
+    server = HTTPServer(("0.0.0.0", 0), CallbackHandler)
+    port = server.server_address[1]
+    url = f"http://{_get_local_ip()}:{port}/done"
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return url, port
+
+
 def _get_task_status(task_id: str) -> dict:
     """Return task payload from API or cursor outbox. Raises on unrecoverable error."""
     try:
@@ -251,7 +303,7 @@ def _get_task_status(task_id: str) -> dict:
 
 
 def cmd_run(args):
-    """Dispatch task, poll until terminal state, retry on failure (cursor mode)."""
+    """Dispatch task, wait for callback (or poll), retry on failure (cursor mode)."""
     mode = (args.mode or cfg.default_execution_mode).strip().lower()
     if mode != "cursor":
         raise SystemExit("run (poll + retry) is only supported with --mode cursor.")
@@ -266,8 +318,13 @@ def cmd_run(args):
     max_attempts = 1 + getattr(args, "retry", 0)
     terminal_ok = {"completed", "complete"}
     terminal_fail = {"failed", "error", "cancelled", "not_found"}
+    callback_timeout = int(os.getenv("WINDOWS_CURSOR_TIMEOUT", "7200"))
 
     for attempt in range(1, max_attempts + 1):
+        callback_event = threading.Event()
+        callback_result = []
+        callback_url, _port = _run_callback_server(callback_event, callback_result)
+
         result = dispatcher.dispatch(
             plan=plan or args.feature,
             feature_name=args.feature,
@@ -277,13 +334,40 @@ def cmd_run(args):
             execution_mode=mode,
             wait_for_completion=False,
             skip_llm=getattr(args, "skip_llm", False),
+            callback_url=callback_url,
         )
         task_id = result.get("task_id", "")
         if not task_id:
             print("Dispatch did not return task_id.", file=sys.stderr)
             sys.exit(1)
-        print(f"Attempt {attempt}/{max_attempts}  task_id={task_id}  (poll every {poll_interval}s)")
+        print(f"Attempt {attempt}/{max_attempts}  task_id={task_id}  (callback or poll)")
 
+        # Wait for callback first (instant when Windows finishes)
+        if callback_event.wait(timeout=callback_timeout):
+            payload = callback_result[0] if callback_result else {}
+            status = (payload.get("status") or "").lower()
+            if status in terminal_ok:
+                print(f"Completed: {task_id}")
+                return
+            if status in terminal_fail:
+                print(f"Terminal state: {status}  task_id={task_id}")
+                if attempt < max_attempts:
+                    print("Retrying...")
+                continue
+
+        # Callback timeout: fall back to one poll in case callback failed
+        payload = _get_task_status(task_id)
+        status = (payload.get("status") or "").lower()
+        if status in terminal_ok:
+            print(f"Completed: {task_id}")
+            return
+        if status in terminal_fail:
+            print(f"Terminal state: {status}  task_id={task_id}")
+            if attempt < max_attempts:
+                print("Retrying...")
+            continue
+
+        # Still running or queued: poll until terminal
         queued_polls = 0
         while True:
             time.sleep(poll_interval)
@@ -297,7 +381,6 @@ def cmd_run(args):
                 break
             if status == "queued":
                 queued_polls += 1
-                # If queued for 3+ polls, daemon may not be running; run process_once to drain
                 if queued_polls >= 3:
                     try:
                         process_once_args = argparse.Namespace(

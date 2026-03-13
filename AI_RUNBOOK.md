@@ -2,6 +2,10 @@
 
 Operational reference for running and debugging the swarm across local and remote setups.
 
+## Primary Goal (The Whole Point)
+
+**Open a tunnel from a slow Mac to a fast Windows machine, have Windows use Cursor (the subscription you pay for) to solve the problem, then send the result back to the Mac.** Mac = orchestration. Windows = the work. Everything else is secondary.
+
 ## 1) Runtime Modes
 
 - **Standalone CLI:** `run.py` handles planning + execution (`FullSwarmFlow`).
@@ -153,6 +157,8 @@ Use Cursor's built-in AI instead of Ollama or OpenAI. Requires Cursor CLI on Win
    ```bash
    python3 scripts/swarm_remote.py run "Add a login button" --mode cursor --repo-path "C:/Users/<you>/repos/your-project"
    ```
+
+   **Callback (no polling):** When you run `swarm_remote run`, the Mac starts a small HTTP server and passes a callback URL to the task. When Windows finishes, it POSTs the result to that URL. The Mac returns immediately instead of polling every 5s. Override Mac IP with `SWARM_CALLBACK_HOST` if auto-detection fails.
 
 ### Smoke test without Ollama (quick pipeline verification)
 
