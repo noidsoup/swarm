@@ -418,11 +418,10 @@ class CursorWorkerService:
             sub_env = {k: v for k, v in os.environ.items() if k != "SWARM_DAEMON_LOG_FILE"}
             sub_env["SWARM_VERBOSE"] = "0"  # Disable CrewAI Rich output to avoid closed-file writes
             sub_env.setdefault("PYTHONIOENCODING", "utf-8")  # Fix Windows charmap/emoji encoding errors
+            # Inherit stdout/stderr so child writes to parent's log file (avoids DEVNULL/closed-file issues)
             proc = subprocess.run(
                 [sys.executable, str(run_script), payload_path, result_path],
                 cwd=str(script_dir),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
                 timeout=int(self.task_timeout_seconds) if self.task_timeout_seconds > 0 else 3600,
                 env=sub_env,
             )
