@@ -55,6 +55,8 @@ python -m swarm.worker
 
 ## 4) Remote / Windows Offload
 
+**Ready for real dev (quick check):** On Windows run `.\scripts\cursor-worker.ps1 status` (worker running). On Mac run a dispatch with `--mode cursor` and your repo path; use `status <task_id>` / `logs <task_id>` to track. Default task timeout is 3600s.
+
 This repo supports three patterns:
 
 - **A. Remote inference only:** set `OLLAMA_BASE_URL` to Windows host, run swarm locally.
@@ -75,7 +77,7 @@ Timeout knobs:
 
 ### Windows "ready" sequence for real cursor runs
 
-Run this on Windows every time before Mac dispatches a real task:
+Run this on Windows before Mac dispatches a real task. Default task timeout is **3600s**; override only if you need longer:
 
 ```powershell
 cd C:\Users\<you>\repos\swarm
@@ -83,8 +85,8 @@ git checkout main
 git pull
 
 .\scripts\cursor-worker.ps1 stop
-$env:WINDOWS_CURSOR_TASK_TIMEOUT = "1800"
 Remove-Item Env:SWARM_SMOKE_SKIP_LLM -ErrorAction SilentlyContinue
+# Optional: $env:WINDOWS_CURSOR_TASK_TIMEOUT = "7200"   # for very long runs
 .\scripts\cursor-worker.ps1 start
 .\scripts\cursor-worker.ps1 status
 ```
@@ -92,7 +94,7 @@ Remove-Item Env:SWARM_SMOKE_SKIP_LLM -ErrorAction SilentlyContinue
 Expected:
 
 - Worker status prints `Worker running PID ...`
-- Start output reflects the timeout from your env (for example `1800s`), not a forced `600s`
+- Start output shows timeout (default **3600s** for real runs; override with `$env:WINDOWS_CURSOR_TASK_TIMEOUT`)
 
 Optional diagnostics:
 
@@ -142,10 +144,11 @@ git pull
 Remove-Item Env:SWARM_SMOKE_SKIP_LLM -ErrorAction SilentlyContinue
 ```
 
-3) **Set real-run timeout in the current shell**
+3) **Optional: set longer timeout** (default is 3600s)
 
 ```powershell
-$env:WINDOWS_CURSOR_TASK_TIMEOUT = "1800"
+# Only if you need > 1 hour per task:
+$env:WINDOWS_CURSOR_TASK_TIMEOUT = "7200"
 echo $env:WINDOWS_CURSOR_TASK_TIMEOUT
 ```
 

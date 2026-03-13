@@ -17,6 +17,31 @@ from swarm.task_models import new_task_id, utcnow_iso
 
 logger = logging.getLogger(__name__)
 
+# Retries for outbox replace (Windows can raise PermissionError when file is read over SSH)
+_WRITE_RESULT_RETRIES = 3
+_WRITE_RESULT_RETRY_SLEEP = 0.2
+
+
+def _atomic_replace(src: Path, dst: Path) -> None:
+    """Replace dst with src, with retries for Windows PermissionError (e.g. reader has handle)."""
+    last: BaseException | None = None
+    for attempt in range(_WRITE_RESULT_RETRIES):
+        try:
+            src.replace(dst)
+            return
+        except OSError as e:
+            last = e
+            if attempt < _WRITE_RESULT_RETRIES - 1:
+                time.sleep(_WRITE_RESULT_RETRY_SLEEP)
+    # Final attempt: unlink target then replace (helps if reader held handle)
+    try:
+        dst.unlink(missing_ok=True)
+        src.replace(dst)
+        return
+    except OSError as e:
+        last = e
+    raise last  # type: ignore[misc]
+
 
 class CursorWorkerClient:
     def __init__(self, connection: Any) -> None:
@@ -423,7 +448,7 @@ class CursorWorkerService:
             ) as tmp:
                 json.dump(result, tmp, indent=2)
                 temp_path = Path(tmp.name)
-            temp_path.replace(outbox_path)
+            _atomic_replace(temp_path, outbox_path)
 
 
 def build_cursor_worker_daemon_command(

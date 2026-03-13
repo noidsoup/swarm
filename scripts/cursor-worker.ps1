@@ -63,8 +63,8 @@ function Start-Worker {
         if (-not $env:WINDOWS_CURSOR_TASK_TIMEOUT) { $env:WINDOWS_CURSOR_TASK_TIMEOUT = "60" }
         $Timeout = [int]$env:WINDOWS_CURSOR_TASK_TIMEOUT
     } else {
-        # Real LLM run: 600s so Windows Ollama has time to finish build phase
-        if (-not $env:WINDOWS_CURSOR_TASK_TIMEOUT) { $env:WINDOWS_CURSOR_TASK_TIMEOUT = "600" }
+        # Real dev: 3600s default so long build/review runs complete without timing out
+        if (-not $env:WINDOWS_CURSOR_TASK_TIMEOUT) { $env:WINDOWS_CURSOR_TASK_TIMEOUT = "3600" }
         $Timeout = [int]$env:WINDOWS_CURSOR_TASK_TIMEOUT
     }
 

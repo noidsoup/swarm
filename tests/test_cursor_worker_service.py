@@ -11,8 +11,40 @@ import pytest
 from swarm.cursor_worker import (
     CursorWorkerClient,
     CursorWorkerService,
+    _atomic_replace,
     build_cursor_worker_daemon_command,
 )
+
+
+def test_atomic_replace_succeeds_on_first_try(tmp_path: Path) -> None:
+    src = tmp_path / "a.tmp"
+    dst = tmp_path / "b.json"
+    src.write_text("ok", encoding="utf-8")
+    _atomic_replace(src, dst)
+    assert not src.exists()
+    assert dst.read_text(encoding="utf-8") == "ok"
+
+
+def test_atomic_replace_succeeds_after_retry(monkeypatch, tmp_path: Path) -> None:
+    src = tmp_path / "a.tmp"
+    dst = tmp_path / "b.json"
+    src.write_text("ok", encoding="utf-8")
+    calls: list[int] = []
+
+    original_replace = Path.replace
+
+    def replace_with_one_failure(self: Path, other: Path) -> None:
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError(13, "Access is denied")  # Windows PermissionError-style
+        original_replace(self, other)
+
+    monkeypatch.setattr(Path, "replace", replace_with_one_failure)
+    monkeypatch.setattr("swarm.cursor_worker.time.sleep", lambda _: None)
+    _atomic_replace(src, dst)
+    assert not src.exists()
+    assert dst.read_text(encoding="utf-8") == "ok"
+    assert len(calls) == 2
 
 
 class DummyDispatcher:
