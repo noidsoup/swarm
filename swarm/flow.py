@@ -251,8 +251,9 @@ class BaseSwarmFlow(Flow[SwarmState]):
             with stdout_cm, stderr_cm:
                 result = crew.kickoff()
         finally:
-            if build_log_file is not None:
-                build_log_file.close()
+            # Do not close build_log_file: CrewAI/libraries may still write to the Tee after we
+            # restore stdout (e.g. from another thread), causing "I/O operation on closed file" on Windows.
+            pass
         _append_build_phase_trace(self.state.run_artifacts_dir, "build_kickoff_completed", builder=self._builder)
         self.state.build_summary = str(result)
         _log_phase_end(f"BUILD ({self._builder})", phase_start)
