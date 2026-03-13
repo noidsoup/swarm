@@ -415,13 +415,15 @@ class CursorWorkerService:
             payload_path = p.name
         result_path = payload_path + ".result"
         try:
+            sub_env = {k: v for k, v in os.environ.items() if k != "SWARM_DAEMON_LOG_FILE"}
+            sub_env["SWARM_VERBOSE"] = "0"  # Disable CrewAI Rich output to avoid closed-file writes
             proc = subprocess.run(
                 [sys.executable, str(run_script), payload_path, result_path],
                 cwd=str(script_dir),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=int(self.task_timeout_seconds) if self.task_timeout_seconds > 0 else 3600,
-                env={k: v for k, v in os.environ.items() if k != "SWARM_DAEMON_LOG_FILE"},
+                env=sub_env,
             )
             if not Path(result_path).exists():
                 raise RuntimeError(
