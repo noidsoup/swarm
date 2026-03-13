@@ -508,6 +508,7 @@ def spawn_cursor_worker_daemon(
         log_path.parent.mkdir(parents=True, exist_ok=True)
         if os.name == "nt":
             env["SWARM_DAEMON_LOG_FILE"] = str(log_path.resolve())
+            env["SWARM_VERBOSE"] = "0"  # Disable CrewAI Rich output to avoid "I/O operation on closed file"
         else:
             log_handle = open(log_path, "a", encoding="utf-8")
 
