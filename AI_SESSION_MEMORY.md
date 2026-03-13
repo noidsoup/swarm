@@ -645,3 +645,30 @@ Replace IP/username/key path if different. Expect `"status": "complete"` and a r
 
 **Next concrete steps**
 - [ ] Optional: add CI job that runs `make smoke` on every push.
+
+---
+
+## 2026-03-13 — Mac-side validation and close-out
+
+**Branch:** `main` (close-out PR to merge)
+
+**Completed since last entry**
+- Ran `update-windows --restart-worker --fast` from Mac: Windows repo pulled, worker restarted with `SWARM_SMOKE_SKIP_LLM=1`.
+- Dispatched smoke task via `swarm_remote.py run "smoke test" --mode cursor --skip-llm`: task created and uploaded to Windows inbox.
+- Task remained in `queued`; worker did not produce outbox result (worker may have exited or not picked up inbox).
+- Stored SimpleMem note: agent operates from Mac side; use SSH via swarm connection config to reach Windows.
+
+**Current state / in progress**
+- Mac→Windows transport (dispatch, inbox upload, status via outbox) works.
+- Worker processing reliability unclear: tasks can stay queued if worker is not running or not polling.
+
+**Key decisions (and why)**
+- `update-windows --fast` passes `-Fast` to cursor-worker.ps1 for smoke-mode restarts.
+- Agent context: Mac-side operations; reach Windows via swarm's SSH config, not manual Windows commands.
+
+**Known risks / blockers**
+- Worker daemon on Windows may exit or fail to poll; verify with `cursor-worker.ps1 status` and `--once` for diagnostics.
+
+**Next concrete steps**
+- [ ] On Windows: `.\scripts\cursor-worker.ps1 status`; if not running, `start -Fast` then rerun Mac smoke.
+- [ ] Run `python scripts/cursor_worker.py --once` on Windows to process one task and capture any errors.
