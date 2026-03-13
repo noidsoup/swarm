@@ -387,10 +387,11 @@ def cmd_update_windows(args):
         raise SystemExit("WINDOWS_HOST and WINDOWS_USER are required (set in env or .env).")
     key = (cfg.windows_ssh_key or os.getenv("WINDOWS_SSH_KEY", "")).strip()
     repo_path = (getattr(args, "repo_path", None) or "").strip() or f"C:\\Users\\{user}\\repos\\swarm"
-    # Windows cmd.exe: cd /d <path> && git ...
-    remote_cmd = f"cd /d {repo_path} && git checkout main && git pull"
+    # Run in cmd.exe so && works (default SSH shell on Windows may be PowerShell)
+    remote_cmd = f'cmd /c "cd /d {repo_path} && git checkout main && git pull'
     if getattr(args, "restart_worker", False):
         remote_cmd += " && powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\cursor-worker.ps1 stop && powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\cursor-worker.ps1 start"
+    remote_cmd += '"'
     ssh_cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15"]
     if key:
         ssh_cmd.extend(["-i", key])

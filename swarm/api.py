@@ -43,7 +43,22 @@ app.add_middleware(
 
 from swarm.config import default_ollama_base_url
 
+SWARM_API_TOKEN = os.getenv("SWARM_API_TOKEN", "")
+
 OLLAMA_URL = default_ollama_base_url()
+
+
+@app.middleware("http")
+async def auth_middleware(request, call_next):
+    if not SWARM_API_TOKEN:
+        return await call_next(request)
+    if request.url.path in ("/health", "/docs", "/openapi.json"):
+        return await call_next(request)
+    auth = request.headers.get("authorization", "")
+    if auth != f"Bearer {SWARM_API_TOKEN}":
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    return await call_next(request)
 
 
 def _task_response(task) -> dict:

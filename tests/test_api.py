@@ -81,3 +81,33 @@ def test_mcp_swarm_status_exposes_learning_summaries(monkeypatch) -> None:
     assert payload["eval_summary"] == "Eval summary"
     assert payload["adaptation_summary"] == "Adaptation summary"
     assert payload["artifacts_dir"] == "/tmp/.swarm/runs/swarm-demo"
+
+
+def test_auth_rejects_without_token(monkeypatch) -> None:
+    import swarm.api as api_module
+    monkeypatch.setattr(api_module, "SWARM_API_TOKEN", "secret123")
+    client = TestClient(app)
+    resp = client.post("/tasks", json={"feature": "test"})
+    assert resp.status_code == 401
+
+
+def test_auth_allows_health_without_token(monkeypatch) -> None:
+    import swarm.api as api_module
+    monkeypatch.setattr(api_module, "SWARM_API_TOKEN", "secret123")
+    client = TestClient(app)
+    resp = client.get("/health")
+    assert resp.status_code == 200
+
+
+def test_auth_allows_with_correct_token(monkeypatch) -> None:
+    import swarm.api as api_module
+    monkeypatch.setattr(api_module, "SWARM_API_TOKEN", "secret123")
+    store = TaskStore()
+    monkeypatch.setattr("swarm.api.store", store)
+    client = TestClient(app)
+    resp = client.post(
+        "/tasks",
+        json={"feature": "test"},
+        headers={"Authorization": "Bearer secret123"},
+    )
+    assert resp.status_code == 201

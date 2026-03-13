@@ -67,6 +67,9 @@ class SwarmConfig:
     default_execution_mode: str = field(
         default_factory=lambda: os.getenv("DEFAULT_EXECUTION_MODE", "local")
     )
+    parallel_quality: bool = field(
+        default_factory=lambda: os.getenv("PARALLEL_QUALITY", "false").lower() == "true"
+    )
 
     def _make_llm(self, model: str):
         from crewai import LLM
@@ -90,6 +93,11 @@ class SwarmConfig:
         if not model:
             model = self.worker_model
         return self._make_llm(model)
+
+    def copy(self) -> "SwarmConfig":
+        """Return a shallow copy safe for per-task mutation."""
+        import copy as _copy
+        return _copy.copy(self)
 
 
 cfg = SwarmConfig()

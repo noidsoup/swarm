@@ -32,3 +32,26 @@ def quality_crew(
         process=Process.sequential,
         verbose=verbose,
     )
+
+
+def parallel_solo_crews(
+    agent_task_pairs: list[tuple[Agent, Task]],
+    verbose: bool = True,
+) -> list[str]:
+    """Run multiple solo crews in parallel threads, return results in order."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def run_one(agent: Agent, task: Task) -> str:
+        crew = solo_crew(agent, task, verbose=verbose)
+        return str(crew.kickoff())
+
+    results: list[str | None] = [None] * len(agent_task_pairs)
+    with ThreadPoolExecutor(max_workers=len(agent_task_pairs)) as pool:
+        future_to_idx = {
+            pool.submit(run_one, agent, task): idx
+            for idx, (agent, task) in enumerate(agent_task_pairs)
+        }
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            results[idx] = future.result()
+    return results

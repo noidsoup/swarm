@@ -16,13 +16,14 @@ import logging
 from pathlib import Path
 import re
 import sys
+import time
 
 from crewai.flow.flow import Flow, listen, router, start
 from pydantic import BaseModel
 
 from swarm.agents import build_agents
 from swarm.config import cfg
-from swarm.crews import quality_crew, solo_crew
+from swarm.crews import parallel_solo_crews, quality_crew, solo_crew
 from swarm.prompt_blocks import (
     build_constraints_block,
     build_context_block,
@@ -106,8 +107,13 @@ class SwarmState(BaseModel):
     run_artifacts_dir: str = ""
 
 
-def _pick_builder(request: str) -> str:
-    """Route to the right builder based on keywords."""
+def _pick_builder(request: str, context_pack: dict | None = None) -> str:
+    """Route to the right builder based on context signals and keywords."""
+    if context_pack:
+        builder_hint = context_pack.get("builder_hint", "")
+        if builder_hint in ("python_dev", "react_dev", "wordpress_dev", "shopify_dev"):
+            return builder_hint
+
     lower = request.lower()
     if any(kw in lower for kw in ("wordpress", "wp", "plugin", "php")):
         return "wordpress_dev"
@@ -131,8 +137,16 @@ def _pick_builder(request: str) -> str:
     return "python_dev"
 
 
-def _log_phase(name: str) -> None:
+def _log_phase(name: str) -> float:
+    """Log phase start and return the start timestamp."""
     logger.info("Starting swarm phase=%s", name)
+    return time.monotonic()
+
+
+def _log_phase_end(name: str, start_time: float) -> None:
+    """Log phase completion with duration."""
+    duration_s = time.monotonic() - start_time
+    logger.info("Completed swarm phase=%s duration_s=%.2f", name, duration_s)
 
 
 # ===================================================================
@@ -188,7 +202,7 @@ class BaseSwarmFlow(Flow[SwarmState]):
         )
 
     def _run_build_phase(self) -> str:
-        _log_phase(f"BUILD ({self._builder})")
+        phase_start = _log_phase(f"BUILD ({self._builder})")
         _append_build_phase_trace(self.state.run_artifacts_dir, "build_phase_started", builder=self._builder)
         builder = self._agents[self._builder]
         task = build_task(
@@ -225,11 +239,12 @@ class BaseSwarmFlow(Flow[SwarmState]):
                 build_log_file.close()
         _append_build_phase_trace(self.state.run_artifacts_dir, "build_kickoff_completed", builder=self._builder)
         self.state.build_summary = str(result)
+        _log_phase_end(f"BUILD ({self._builder})", phase_start)
         logger.info("Build completed builder=%s summary=%s", self._builder, self.state.build_summary[:500])
         return self.state.build_summary
 
     def _run_review_phase(self) -> str:
-        _log_phase(
+        phase_start = _log_phase(
             f"REVIEW (iteration {self.state.review_iteration + 1}/{cfg.max_review_loops})"
         )
         reviewer = self._agents["reviewer"]
@@ -248,6 +263,7 @@ class BaseSwarmFlow(Flow[SwarmState]):
         result = crew.kickoff()
         self.state.review_feedback = str(result)
         self.state.review_iteration += 1
+        _log_phase_end(f"REVIEW (iteration {self.state.review_iteration}/{cfg.max_review_loops})", phase_start)
         logger.info(
             "Review completed iteration=%s feedback=%s",
             self.state.review_iteration,
@@ -264,7 +280,7 @@ class BaseSwarmFlow(Flow[SwarmState]):
         return "needs_fix"
 
     def _run_fix_phase(self) -> str:
-        _log_phase(f"FIX (iteration {self.state.review_iteration})")
+        phase_start = _log_phase(f"FIX (iteration {self.state.review_iteration})")
         builder = self._agents[self._builder]
         task = fix_task(
             builder,
@@ -280,6 +296,7 @@ class BaseSwarmFlow(Flow[SwarmState]):
         crew = solo_crew(builder, task, verbose=cfg.verbose)
         result = crew.kickoff()
         self.state.build_summary += f"\n\n--- Fix iteration {self.state.review_iteration} ---\n{result}"
+        _log_phase_end(f"FIX (iteration {self.state.review_iteration})", phase_start)
         return str(result)
 
     def _run_review_loop(self) -> str:
@@ -294,7 +311,7 @@ class BaseSwarmFlow(Flow[SwarmState]):
         return self.state.review_feedback
 
     def _run_quality_phase(self) -> str:
-        _log_phase("QUALITY GATES")
+        phase_start = _log_phase("QUALITY GATES")
         agents = self._agents
         summary = self._compose_phase_prompt(
             task_text=self.state.build_summary,
@@ -310,18 +327,31 @@ class BaseSwarmFlow(Flow[SwarmState]):
         tst_t = test_task(agents["tester"], summary)
         lnt_t = lint_task(agents["linter_agent"], summary)
 
-        crew = quality_crew(
-            agents=[agents["security"], agents["performance"], agents["tester"], agents["linter_agent"]],
-            tasks=[sec_t, perf_t, tst_t, lnt_t],
-            verbose=cfg.verbose,
-        )
-        result = crew.kickoff()
-        self.state.quality_report = str(result)
+        pairs = [
+            (agents["security"], sec_t),
+            (agents["performance"], perf_t),
+            (agents["tester"], tst_t),
+            (agents["linter_agent"], lnt_t),
+        ]
+
+        if cfg.parallel_quality:
+            results = parallel_solo_crews(pairs, verbose=cfg.verbose)
+            self.state.quality_report = "\n\n".join(results)
+        else:
+            crew = quality_crew(
+                agents=[a for a, _ in pairs],
+                tasks=[t for _, t in pairs],
+                verbose=cfg.verbose,
+            )
+            result = crew.kickoff()
+            self.state.quality_report = str(result)
+
+        _log_phase_end("QUALITY GATES", phase_start)
         logger.info("Quality gates completed summary=%s", self.state.quality_report[:500])
         return self.state.quality_report
 
     def _run_polish_phase(self) -> str:
-        _log_phase("POLISH")
+        phase_start = _log_phase("POLISH")
         agents = self._agents
         summary = self._compose_phase_prompt(
             task_text=self.state.build_summary,
@@ -342,6 +372,7 @@ class BaseSwarmFlow(Flow[SwarmState]):
         )
         result = crew.kickoff()
         self.state.polish_report = str(result)
+        _log_phase_end("POLISH", phase_start)
         logger.info("Polish completed summary=%s", self.state.polish_report[:500])
         return self.state.polish_report
 

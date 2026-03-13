@@ -9,7 +9,9 @@ import json
 import ipaddress
 import logging
 import os
+import signal
 import subprocess
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -34,18 +36,43 @@ from swarm.evals import (
 from swarm.logging_utils import configure_logging
 from swarm.retrieval import build_retrieval_pack, summarize_retrieval_pack
 from swarm.run_artifacts import artifact_file_map, ensure_artifact_dir
-from swarm.task_models import TaskStatus, utcnow_iso
+from swarm.task_models import TaskResult, TaskStatus, utcnow_iso
 from swarm.validation import (
     run_postflight_validation,
     run_preflight_validation,
     summarize_validation_report,
 )
+from swarm.errors import PreflightError, PostflightError, RetryableError
 from swarm.task_store import store
 
+from dataclasses import dataclass, field as dataclass_field
 
 POLL_INTERVAL = int(os.getenv("WORKER_POLL_INTERVAL", "5"))
 WORKSPACE = os.getenv("REPO_ROOT", "/workspace")
 logger = logging.getLogger(__name__)
+
+_shutdown_event = threading.Event()
+
+
+@dataclass
+class RunContext:
+    """Carries state between pipeline steps inside _run_swarm."""
+
+    task_id: str
+    task: TaskResult
+    cfg: object
+    task_dir: str = ""
+    artifact_paths: dict[str, str] = dataclass_field(default_factory=dict)
+    context_pack: dict = dataclass_field(default_factory=dict)
+    context_pack_json: str = ""
+    retrieval_pack: dict = dataclass_field(default_factory=dict)
+    retrieval_pack_json: str = ""
+    adaptation_strategy: dict = dataclass_field(default_factory=dict)
+    flow_adaptation_json: str = ""
+    validation_report: dict = dataclass_field(default_factory=dict)
+    latest_validation_status: str = "warn"
+    retries: int = 0
+    flow: object = None
 
 
 def _log(task_id: str, msg: str) -> None:
@@ -98,16 +125,31 @@ def _validate_repo_url(repo_url: str) -> None:
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
+        pass
+    else:
+        if (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_reserved
+            or address.is_multicast
+        ):
+            raise ValueError(f"Refusing private repo URL: {repo_url}")
         return
 
-    if (
-        address.is_private
-        or address.is_loopback
-        or address.is_link_local
-        or address.is_reserved
-        or address.is_multicast
-    ):
-        raise ValueError(f"Refusing private repo URL: {repo_url}")
+    import socket
+    try:
+        resolved = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return
+
+    for _family, _type, _proto, _canonname, sockaddr in resolved:
+        try:
+            addr = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            continue
+        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+            raise ValueError(f"Refusing repo URL that resolves to private address: {repo_url} -> {sockaddr[0]}")
 
 
 def _is_ollama_runner_startup_timeout(exc: Exception) -> bool:
@@ -117,6 +159,27 @@ def _is_ollama_runner_startup_timeout(exc: Exception) -> bool:
         "timed out waiting for llama runner to start" in msg
         or ("ollamaexception" in msg and "runner" in msg and "timed out" in msg)
     )
+
+
+def _is_transient_error(exc: Exception) -> bool:
+    """Detect transient errors that may succeed on retry."""
+    if _is_ollama_runner_startup_timeout(exc):
+        return True
+    if isinstance(exc, RetryableError):
+        return True
+    msg = str(exc).lower()
+    transient_markers = (
+        "connection reset",
+        "connection refused",
+        "timed out",
+        "timeout",
+        "429",
+        "503",
+        "rate limit",
+        "too many requests",
+        "temporary failure",
+    )
+    return any(marker in msg for marker in transient_markers)
 
 
 def _write_lesson(task, report: dict) -> None:
@@ -162,10 +225,7 @@ def _execute_flow(task, cfg, context_pack_json: str, retrieval_pack_json: str):
 
 
 def _call_execute_flow(task, cfg, context_pack_json: str, retrieval_pack_json: str):
-    try:
-        return _execute_flow(task, cfg, context_pack_json, retrieval_pack_json)
-    except TypeError:
-        return _execute_flow(task, cfg)
+    return _execute_flow(task, cfg, context_pack_json, retrieval_pack_json)
 
 
 def _retry_with_adaptation(
@@ -179,7 +239,7 @@ def _retry_with_adaptation(
     retries: int,
     error: Exception,
 ):
-    if not _is_ollama_runner_startup_timeout(error):
+    if not _is_transient_error(error):
         raise error
 
     retry_budget = min(
@@ -212,186 +272,209 @@ def _retry_with_adaptation(
     return _call_execute_flow(task, cfg, context_pack_json, retrieval_pack_json), retries + 1
 
 
+def _workspace_step(ctx: RunContext) -> None:
+    """Prepare workspace directory and artifact paths."""
+    ctx.task_dir = _prepare_workspace(ctx.task_id, ctx.task.repo_url)
+    os.makedirs(ctx.task_dir, exist_ok=True)
+    ctx.cfg.repo_root = ctx.task_dir
+    ctx.cfg.auto_commit = False
+    ctx.task.artifacts_dir = ensure_artifact_dir(ctx.task_dir, ctx.task_id)
+    ctx.artifact_paths = artifact_file_map(ctx.task_dir, ctx.task_id)
+    append_event(
+        ctx.artifact_paths["events"],
+        make_event(ctx.task_id, "run_started", "running", {"builder": ctx.task.builder_type or "auto"}),
+    )
+
+
+def _context_step(ctx: RunContext) -> None:
+    """Build context pack, adaptation strategy, and retrieval pack."""
+    ctx.context_pack = build_context_pack(ctx.task_dir, ctx.task.feature, ctx.task.plan)
+    with open(ctx.artifact_paths["context"], "w", encoding="utf-8") as f:
+        json.dump(ctx.context_pack, f, indent=2)
+    ctx.task.context_summary = summarize_context_pack(ctx.context_pack)
+    ctx.context_pack_json = json.dumps(ctx.context_pack)
+    append_event(
+        ctx.artifact_paths["events"],
+        make_event(ctx.task_id, "context_built", "pass", {"summary": ctx.task.context_summary}),
+    )
+
+    prior_signals = load_prior_run_signals(ctx.task_dir, ctx.task.feature, ctx.context_pack)
+    ctx.adaptation_strategy = choose_adaptation_strategy(ctx.task.feature, ctx.context_pack, prior_signals)
+    ctx.task.adaptation_summary = summarize_adaptation_strategy(ctx.adaptation_strategy)
+    ctx.flow_adaptation_json = json.dumps(ctx.adaptation_strategy)
+    with open(Path(ctx.artifact_paths["eval"]).with_name("adaptation.json"), "w", encoding="utf-8") as f:
+        json.dump(ctx.adaptation_strategy, f, indent=2)
+    append_event(
+        ctx.artifact_paths["events"],
+        make_event(ctx.task_id, "phase_completed", "pass", {"phase": "adaptation", "summary": ctx.task.adaptation_summary}),
+    )
+
+    retrieval_request = ctx.task.feature
+    retrieval_biases = ctx.adaptation_strategy.get("retrieval_biases", [])
+    if "tests" in retrieval_biases:
+        retrieval_request = f"{retrieval_request} tests"
+    if ctx.adaptation_strategy.get("builder_override"):
+        ctx.task.builder_type = ctx.adaptation_strategy["builder_override"]
+
+    ctx.retrieval_pack = build_retrieval_pack(ctx.task_dir, retrieval_request, ctx.context_pack)
+    with open(ctx.artifact_paths["retrieval"], "w", encoding="utf-8") as f:
+        json.dump(ctx.retrieval_pack, f, indent=2)
+    ctx.task.retrieval_summary = summarize_retrieval_pack(ctx.retrieval_pack)
+    ctx.retrieval_pack_json = json.dumps(ctx.retrieval_pack)
+    append_event(
+        ctx.artifact_paths["events"],
+        make_event(ctx.task_id, "retrieval_built", "pass", {"summary": ctx.task.retrieval_summary}),
+    )
+
+
+def _preflight_step(ctx: RunContext) -> None:
+    """Run preflight validation. Raises PreflightError on hard failure."""
+    ctx.validation_report["preflight"] = run_preflight_validation(ctx.task_dir, ctx.context_pack)
+    ctx.latest_validation_status = ctx.validation_report["preflight"]["status"]
+    ctx.task.validation_summary = summarize_validation_report(ctx.validation_report["preflight"])
+    with open(ctx.artifact_paths["validation"], "w", encoding="utf-8") as f:
+        json.dump(ctx.validation_report, f, indent=2)
+    append_event(
+        ctx.artifact_paths["events"],
+        make_event(
+            ctx.task_id,
+            "validation_completed",
+            ctx.validation_report["preflight"]["status"],
+            {"stage": "preflight", "summary": ctx.task.validation_summary},
+        ),
+    )
+    store.update(ctx.task)
+
+    if ctx.validation_report["preflight"]["status"] == "fail":
+        ctx.task.failure_kind = "preflight_validation_failed"
+        store.update(ctx.task)
+        raise PreflightError("Preflight validation failed")
+
+
+def _execute_step(ctx: RunContext) -> None:
+    """Run the agent flow with retry/adaptation on transient failure."""
+    try:
+        ctx.flow = _call_execute_flow(ctx.task, ctx.cfg, ctx.context_pack_json, ctx.retrieval_pack_json)
+    except Exception as first_error:
+        ctx.flow, ctx.retries = _retry_with_adaptation(
+            task=ctx.task,
+            cfg=ctx.cfg,
+            context_pack_json=ctx.context_pack_json,
+            retrieval_pack_json=ctx.retrieval_pack_json,
+            artifact_paths=ctx.artifact_paths,
+            adaptation_strategy=ctx.adaptation_strategy,
+            retries=ctx.retries,
+            error=first_error,
+        )
+        _log(ctx.task_id, f"Adaptive retry succeeded with {ctx.cfg.worker_model}.")
+
+
+def _postflight_step(ctx: RunContext) -> None:
+    """Collect results, run postflight validation, raise PostflightError on failure."""
+    task = store.get(ctx.task_id)
+    task.status = TaskStatus.COMPLETED
+    task.completed_at = utcnow_iso()
+    task.build_summary = ctx.flow.state.build_summary[:5000]
+    task.review_feedback = ctx.flow.state.review_feedback[:3000]
+    task.quality_report = ctx.flow.state.quality_report[:5000]
+    task.polish_report = ctx.flow.state.polish_report[:3000]
+    task.artifacts_dir = getattr(ctx.flow.state, "run_artifacts_dir", task.artifacts_dir)
+    ctx.task = task
+    store.update(ctx.task)
+
+    append_event(ctx.artifact_paths["events"], make_event(ctx.task_id, "phase_completed", "pass", {"phase": "build"}))
+    append_event(
+        ctx.artifact_paths["events"],
+        make_event(
+            ctx.task_id,
+            "phase_completed",
+            "pass",
+            {"phase": "review", "review_iterations": getattr(ctx.flow.state, "review_iteration", 0)},
+        ),
+    )
+    if ctx.flow.state.quality_report:
+        append_event(ctx.artifact_paths["events"], make_event(ctx.task_id, "phase_completed", "pass", {"phase": "quality"}))
+    if ctx.flow.state.polish_report:
+        append_event(ctx.artifact_paths["events"], make_event(ctx.task_id, "phase_completed", "pass", {"phase": "polish"}))
+
+    ctx.validation_report["postflight"] = run_postflight_validation(
+        ctx.task_dir, ctx.context_pack, ctx.flow.state.build_summary
+    )
+    if ctx.adaptation_strategy.get("strict_validation") and ctx.validation_report["postflight"]["status"] == "warn":
+        ctx.validation_report["postflight"]["status"] = "fail"
+        ctx.validation_report["postflight"]["checks"]["strict_mode"] = {
+            "status": "fail",
+            "details": {"message": "Strict validation escalated warnings to failure"},
+        }
+    ctx.latest_validation_status = ctx.validation_report["postflight"]["status"]
+    ctx.flow.state.validation_report_json = json.dumps(ctx.validation_report)
+    ctx.flow.state.adaptation_report_json = ctx.flow_adaptation_json
+    ctx.task.validation_summary = summarize_validation_report(ctx.validation_report["postflight"])
+    with open(ctx.artifact_paths["validation"], "w", encoding="utf-8") as f:
+        json.dump(ctx.validation_report, f, indent=2)
+    append_event(
+        ctx.artifact_paths["events"],
+        make_event(
+            ctx.task_id,
+            "validation_completed",
+            ctx.validation_report["postflight"]["status"],
+            {"stage": "postflight", "summary": ctx.task.validation_summary},
+        ),
+    )
+
+    if ctx.validation_report["postflight"]["status"] == "fail":
+        ctx.task.failure_kind = "postflight_validation_failed"
+        store.update(ctx.task)
+        raise PostflightError("Postflight validation failed")
+
+
+def _eval_step(ctx: RunContext) -> None:
+    """Generate eval report and write lessons."""
+    append_event(ctx.artifact_paths["events"], make_event(ctx.task_id, "run_completed", "complete"))
+    eval_report = build_eval_report(
+        task_id=ctx.task_id,
+        events=read_events(ctx.artifact_paths["events"]),
+        final_status="completed",
+        validation_status=ctx.latest_validation_status,
+        review_iterations=getattr(ctx.flow.state, "review_iteration", 0),
+        retries=ctx.retries,
+        failure_kind=ctx.task.failure_kind,
+        builder=ctx.task.builder_type or "auto",
+        repo_profile=",".join(ctx.context_pack.get("stack", {}).get("frameworks", [])[:2]),
+        previous_reports=load_recent_eval_reports(ctx.task_dir, exclude_task_id=ctx.task_id),
+    )
+    with open(ctx.artifact_paths["eval"], "w", encoding="utf-8") as f:
+        json.dump(eval_report, f, indent=2)
+    ctx.task.eval_summary = summarize_eval_report(eval_report)
+    ctx.task.lessons = eval_report.get("lessons", [])
+    ctx.task.comparison = eval_report.get("comparison", {})
+    ctx.flow.state.eval_report_json = json.dumps(eval_report)
+    store.update(ctx.task)
+    _write_lesson(ctx.task, eval_report)
+
+
 def _run_swarm(task_id: str) -> None:
     task = store.get(task_id)
     if not task:
         return
 
-    artifact_paths: dict[str, str] = {}
-    retries = 0
-    latest_validation_status = "warn"
     task.status = TaskStatus.RUNNING
     task.started_at = utcnow_iso()
     store.update(task)
-
     _log(task_id, f"Starting swarm for: {task.feature}")
 
+    from swarm.config import cfg
+
+    task_cfg = cfg.copy() if hasattr(cfg, "copy") else cfg
+    ctx = RunContext(task_id=task_id, task=task, cfg=task_cfg)
+
     try:
-        task_dir = _prepare_workspace(task_id, task.repo_url)
-        os.makedirs(task_dir, exist_ok=True)
-
-        from swarm.config import cfg
-        cfg.repo_root = task_dir
-        cfg.auto_commit = False
-        task.artifacts_dir = ensure_artifact_dir(task_dir, task_id)
-        artifact_paths = artifact_file_map(task_dir, task_id)
-        append_event(
-            artifact_paths["events"],
-            make_event(task_id, "run_started", "running", {"builder": task.builder_type or "auto"}),
-        )
-        context_pack = build_context_pack(task_dir, task.feature, task.plan)
-        with open(artifact_paths["context"], "w", encoding="utf-8") as f:
-            json.dump(context_pack, f, indent=2)
-        task.context_summary = summarize_context_pack(context_pack)
-        context_pack_json = json.dumps(context_pack)
-        append_event(
-            artifact_paths["events"],
-            make_event(task_id, "context_built", "pass", {"summary": task.context_summary}),
-        )
-        prior_signals = load_prior_run_signals(task_dir, task.feature, context_pack)
-        adaptation_strategy = choose_adaptation_strategy(task.feature, context_pack, prior_signals)
-        task.adaptation_summary = summarize_adaptation_strategy(adaptation_strategy)
-        flow_adaptation_json = json.dumps(adaptation_strategy)
-        with open(Path(artifact_paths["eval"]).with_name("adaptation.json"), "w", encoding="utf-8") as f:
-            json.dump(adaptation_strategy, f, indent=2)
-        append_event(
-            artifact_paths["events"],
-            make_event(task_id, "phase_completed", "pass", {"phase": "adaptation", "summary": task.adaptation_summary}),
-        )
-
-        retrieval_request = task.feature
-        retrieval_biases = adaptation_strategy.get("retrieval_biases", [])
-        if "tests" in retrieval_biases:
-            retrieval_request = f"{retrieval_request} tests"
-        if adaptation_strategy.get("builder_override"):
-            task.builder_type = adaptation_strategy["builder_override"]
-
-        retrieval_pack = build_retrieval_pack(task_dir, retrieval_request, context_pack)
-        with open(artifact_paths["retrieval"], "w", encoding="utf-8") as f:
-            json.dump(retrieval_pack, f, indent=2)
-        task.retrieval_summary = summarize_retrieval_pack(retrieval_pack)
-        retrieval_pack_json = json.dumps(retrieval_pack)
-        append_event(
-            artifact_paths["events"],
-            make_event(task_id, "retrieval_built", "pass", {"summary": task.retrieval_summary}),
-        )
-        validation_report = {"preflight": run_preflight_validation(task_dir, context_pack)}
-        latest_validation_status = validation_report["preflight"]["status"]
-        task.validation_summary = summarize_validation_report(validation_report["preflight"])
-        with open(artifact_paths["validation"], "w", encoding="utf-8") as f:
-            json.dump(validation_report, f, indent=2)
-        append_event(
-            artifact_paths["events"],
-            make_event(
-                task_id,
-                "validation_completed",
-                validation_report["preflight"]["status"],
-                {"stage": "preflight", "summary": task.validation_summary},
-            ),
-        )
-        store.update(task)
-
-        if validation_report["preflight"]["status"] == "fail":
-            task.failure_kind = "preflight_validation_failed"
-            store.update(task)
-            raise RuntimeError("Preflight validation failed")
-
-        try:
-            flow = _call_execute_flow(task, cfg, context_pack_json, retrieval_pack_json)
-        except Exception as first_error:
-            flow, retries = _retry_with_adaptation(
-                task=task,
-                cfg=cfg,
-                context_pack_json=context_pack_json,
-                retrieval_pack_json=retrieval_pack_json,
-                artifact_paths=artifact_paths,
-                adaptation_strategy=adaptation_strategy,
-                retries=retries,
-                error=first_error,
-            )
-            _log(task_id, f"Adaptive retry succeeded with {cfg.worker_model}.")
-
-        task = store.get(task_id)
-        task.status = TaskStatus.COMPLETED
-        task.completed_at = utcnow_iso()
-        task.build_summary = flow.state.build_summary[:5000]
-        task.review_feedback = flow.state.review_feedback[:3000]
-        task.quality_report = flow.state.quality_report[:5000]
-        task.polish_report = flow.state.polish_report[:3000]
-        task.artifacts_dir = getattr(flow.state, "run_artifacts_dir", task.artifacts_dir)
-        append_event(
-            artifact_paths["events"],
-            make_event(task_id, "phase_completed", "pass", {"phase": "build"}),
-        )
-        append_event(
-            artifact_paths["events"],
-            make_event(
-                task_id,
-                "phase_completed",
-                "pass",
-                {"phase": "review", "review_iterations": getattr(flow.state, "review_iteration", 0)},
-            ),
-        )
-        if flow.state.quality_report:
-            append_event(
-                artifact_paths["events"],
-                make_event(task_id, "phase_completed", "pass", {"phase": "quality"}),
-            )
-        if flow.state.polish_report:
-            append_event(
-                artifact_paths["events"],
-                make_event(task_id, "phase_completed", "pass", {"phase": "polish"}),
-            )
-        validation_report["postflight"] = run_postflight_validation(task_dir, context_pack, flow.state.build_summary)
-        if adaptation_strategy.get("strict_validation") and validation_report["postflight"]["status"] == "warn":
-            validation_report["postflight"]["status"] = "fail"
-            validation_report["postflight"]["checks"]["strict_mode"] = {
-                "status": "fail",
-                "details": {"message": "Strict validation escalated warnings to failure"},
-            }
-        latest_validation_status = validation_report["postflight"]["status"]
-        flow.state.validation_report_json = json.dumps(validation_report)
-        flow.state.adaptation_report_json = flow_adaptation_json
-        task.validation_summary = summarize_validation_report(validation_report["postflight"])
-        with open(artifact_paths["validation"], "w", encoding="utf-8") as f:
-            json.dump(validation_report, f, indent=2)
-        append_event(
-            artifact_paths["events"],
-            make_event(
-                task_id,
-                "validation_completed",
-                validation_report["postflight"]["status"],
-                {"stage": "postflight", "summary": task.validation_summary},
-            ),
-        )
-
-        if validation_report["postflight"]["status"] == "fail":
-            task.failure_kind = "postflight_validation_failed"
-            store.update(task)
-            raise RuntimeError("Postflight validation failed")
-
-        append_event(artifact_paths["events"], make_event(task_id, "run_completed", "complete"))
-        eval_report = build_eval_report(
-            task_id=task_id,
-            events=read_events(artifact_paths["events"]),
-            final_status="completed",
-            validation_status=latest_validation_status,
-            review_iterations=getattr(flow.state, "review_iteration", 0),
-            retries=retries,
-            failure_kind=task.failure_kind,
-            builder=task.builder_type or "auto",
-            repo_profile=",".join(context_pack.get("stack", {}).get("frameworks", [])[:2]),
-            previous_reports=load_recent_eval_reports(task_dir, exclude_task_id=task_id),
-        )
-        with open(artifact_paths["eval"], "w", encoding="utf-8") as f:
-            json.dump(eval_report, f, indent=2)
-        task.eval_summary = summarize_eval_report(eval_report)
-        task.lessons = eval_report.get("lessons", [])
-        task.comparison = eval_report.get("comparison", {})
-        flow.state.eval_report_json = json.dumps(eval_report)
-        store.update(task)
-        _write_lesson(task, eval_report)
-
+        _workspace_step(ctx)
+        _context_step(ctx)
+        _preflight_step(ctx)
+        _execute_step(ctx)
+        _postflight_step(ctx)
+        _eval_step(ctx)
         _log(task_id, "Swarm completed successfully.")
 
     except Exception as e:
@@ -401,24 +484,24 @@ def _run_swarm(task_id: str) -> None:
         if not task.failure_kind:
             task.failure_kind = "execution_failed"
         task.error = f"{e}\n{traceback.format_exc()[-2000:]}"
-        if artifact_paths:
+        if ctx.artifact_paths:
             append_event(
-                artifact_paths["events"],
+                ctx.artifact_paths["events"],
                 make_event(task_id, "run_failed", "failed", {"error": str(e), "failure_kind": task.failure_kind}),
             )
             eval_report = build_eval_report(
                 task_id=task_id,
-                events=read_events(artifact_paths["events"]),
+                events=read_events(ctx.artifact_paths["events"]),
                 final_status="failed",
-                validation_status=latest_validation_status,
+                validation_status=ctx.latest_validation_status,
                 review_iterations=0,
-                retries=retries,
+                retries=ctx.retries,
                 failure_kind=task.failure_kind,
                 builder=task.builder_type or "auto",
-                repo_profile=",".join(context_pack.get("stack", {}).get("frameworks", [])[:2]),
-                previous_reports=load_recent_eval_reports(task_dir, exclude_task_id=task_id),
+                repo_profile=",".join(ctx.context_pack.get("stack", {}).get("frameworks", [])[:2]),
+                previous_reports=load_recent_eval_reports(ctx.task_dir, exclude_task_id=task_id),
             )
-            with open(artifact_paths["eval"], "w", encoding="utf-8") as f:
+            with open(ctx.artifact_paths["eval"], "w", encoding="utf-8") as f:
                 json.dump(eval_report, f, indent=2)
             task.eval_summary = summarize_eval_report(eval_report)
             task.lessons = eval_report.get("lessons", [])
@@ -434,12 +517,21 @@ def main() -> None:
     logger.info("Swarm worker workspace=%s", WORKSPACE)
     os.makedirs(WORKSPACE, exist_ok=True)
 
-    while True:
+    def _handle_shutdown(signum, frame):
+        logger.info("Received signal %s, shutting down after current task...", signum)
+        _shutdown_event.set()
+
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT, _handle_shutdown)
+
+    while not _shutdown_event.is_set():
         task_id = store.next_queued()
         if task_id:
             _run_swarm(task_id)
         else:
-            time.sleep(POLL_INTERVAL)
+            _shutdown_event.wait(timeout=POLL_INTERVAL)
+
+    logger.info("Worker shut down gracefully.")
 
 
 if __name__ == "__main__":

@@ -161,3 +161,61 @@ def test_build_phase_writes_checkpoints_and_captured_stdout(monkeypatch, tmp_pat
     assert "checkpoint=build_kickoff_started" in content
     assert "tool call started" in content
     assert "checkpoint=build_kickoff_completed" in content
+
+
+def test_quality_phase_runs_parallel_when_configured(monkeypatch) -> None:
+    monkeypatch.setattr(
+        flow_module,
+        "build_agents",
+        lambda: {
+            "python_dev": object(),
+            "react_dev": object(),
+            "wordpress_dev": object(),
+            "shopify_dev": object(),
+            "reviewer": object(),
+            "security": object(),
+            "performance": object(),
+            "tester": object(),
+            "refactorer": object(),
+            "docs": object(),
+            "linter_agent": object(),
+        },
+    )
+    monkeypatch.setattr(flow_module, "security_task", lambda agent, summary: ("security", summary))
+    monkeypatch.setattr(flow_module, "performance_task", lambda agent, summary: ("performance", summary))
+    monkeypatch.setattr(flow_module, "test_task", lambda agent, summary: ("test", summary))
+    monkeypatch.setattr(flow_module, "lint_task", lambda agent, summary: ("lint", summary))
+
+    ran_agents = []
+
+    def fake_parallel_solo_crews(pairs, verbose=True):
+        for _agent, task in pairs:
+            ran_agents.append(task[0])
+        return ["sec report", "perf report", "test report", "lint report"]
+
+    monkeypatch.setattr(flow_module, "parallel_solo_crews", fake_parallel_solo_crews)
+
+    from swarm.config import cfg
+    original = cfg.parallel_quality
+    cfg.parallel_quality = True
+
+    try:
+        flow = flow_module.WorkerSwarmFlow(plan="Ship it")
+        flow.state.build_summary = "built feature"
+        result = flow._run_quality_phase()
+        assert "sec report" in result
+        assert "lint report" in result
+        assert set(ran_agents) == {"security", "performance", "test", "lint"}
+    finally:
+        cfg.parallel_quality = original
+
+
+def test_pick_builder_uses_context_pack_hint() -> None:
+    context_pack = {"stack": {"frameworks": ["nextjs", "react"]}, "builder_hint": "react_dev"}
+    assert flow_module._pick_builder("fix the login bug", context_pack) == "react_dev"
+
+
+def test_pick_builder_falls_back_to_keywords_without_context() -> None:
+    assert flow_module._pick_builder("fix the login bug") == "python_dev"
+    assert flow_module._pick_builder("add a react component") == "react_dev"
+    assert flow_module._pick_builder("wordpress plugin update") == "wordpress_dev"

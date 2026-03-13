@@ -11,6 +11,7 @@ from typing import Any
 import requests
 
 from swarm.cursor_worker import CursorWorkerClient
+from swarm.errors import DispatchError
 from swarm.run_artifacts import ensure_artifact_dir
 from swarm.task_models import new_task_id
 from swarm.task_models import utcnow_iso
@@ -53,7 +54,7 @@ class Dispatcher:
     ) -> dict[str, Any]:
         mode = (execution_mode or getattr(self.cfg, "default_execution_mode", "local")).strip().lower()
         if mode not in {"local", "ollama", "cursor"}:
-            raise ValueError(f"Unsupported execution mode: {mode}")
+            raise DispatchError(f"Unsupported execution mode: {mode}")
 
         if mode == "local":
             return self._dispatch_local(
@@ -134,7 +135,7 @@ class Dispatcher:
         repo_url: str,
     ) -> dict[str, Any]:
         if not self.connection.swarm_api_url:
-            raise ValueError("WINDOWS_SWARM_API is required for ollama mode")
+            raise DispatchError("WINDOWS_SWARM_API is required for ollama mode")
 
         payload = {
             "feature": feature_name or "Swarm task",
@@ -189,7 +190,7 @@ class Dispatcher:
         wait_for_completion: bool = True,
     ) -> dict[str, Any]:
         if not self.connection.enabled():
-            raise ValueError("WINDOWS_HOST and WINDOWS_USER are required for cursor mode")
+            raise DispatchError("WINDOWS_HOST and WINDOWS_USER are required for cursor mode")
         client = CursorWorkerClient(self.connection)
         task_payload = {
             "plan": plan,
