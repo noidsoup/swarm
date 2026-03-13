@@ -13,6 +13,7 @@ from __future__ import annotations
 from contextlib import nullcontext, redirect_stderr, redirect_stdout
 import json
 import logging
+import os
 from pathlib import Path
 import re
 import sys
@@ -236,7 +237,8 @@ class BaseSwarmFlow(Flow[SwarmState]):
         _append_build_phase_trace(self.state.run_artifacts_dir, "build_task_created", builder=self._builder)
         crew = solo_crew(builder, task, verbose=cfg.verbose)
         build_log_path = _build_phase_log_path(self.state.run_artifacts_dir)
-        if build_log_path is not None:
+        skip_tee = sys.platform == "win32" and os.getenv("SWARM_DAEMON_LOG_FILE")
+        if build_log_path is not None and not skip_tee:
             build_log_path.parent.mkdir(parents=True, exist_ok=True)
             build_log_file = build_log_path.open("a", encoding="utf-8")
             stdout_cm = redirect_stdout(_TeeStream(sys.stdout, build_log_file))
