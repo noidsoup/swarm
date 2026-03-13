@@ -22,6 +22,8 @@ uncommitted/
 
 # Cursor worker temp payloads (Windows subprocess dispatch)
 .swarm/worker/
+# Cursor agent mode marker (created by cursor-worker.ps1 -CursorAgent)
+.swarm/cursor-agent-mode
 
 # Security: never commit local SSH material
 .ssh/

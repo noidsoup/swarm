@@ -62,6 +62,11 @@ function Start-Worker {
 
     if ($CursorAgent) {
         $env:SWARM_USE_CURSOR_AGENT = "1"
+        $markerPath = Join-Path $RepoRoot ".swarm\cursor-agent-mode"
+        New-Item -ItemType File -Path $markerPath -Force | Out-Null
+    } else {
+        $markerPath = Join-Path $RepoRoot ".swarm\cursor-agent-mode"
+        if (Test-Path $markerPath) { Remove-Item $markerPath -Force }
     }
     if ($Fast) {
         $env:SWARM_SMOKE_SKIP_LLM = "1"

@@ -23,6 +23,15 @@ _WRITE_RESULT_RETRIES = 3
 _WRITE_RESULT_RETRY_SLEEP = 0.2
 
 
+def _cursor_agent_requested() -> bool:
+    """True if Cursor agent mode is requested (env or .swarm/cursor-agent-mode marker)."""
+    if os.getenv("SWARM_USE_CURSOR_AGENT", "").lower() in ("1", "true", "yes"):
+        return True
+    repo_root = Path(__file__).resolve().parent.parent
+    marker = repo_root / ".swarm" / "cursor-agent-mode"
+    return marker.exists()
+
+
 def _atomic_replace(src: Path, dst: Path) -> None:
     """Replace dst with src, with retries for Windows PermissionError (e.g. reader has handle)."""
     last: BaseException | None = None
@@ -387,10 +396,7 @@ class CursorWorkerService:
         try:
             use_subprocess = (
                 (os.name == "nt" and os.getenv("SWARM_DAEMON_LOG_FILE"))
-                or (
-                    os.getenv("SWARM_USE_CURSOR_AGENT", "").lower() in ("1", "true", "yes")
-                    and not payload.get("skip_llm")
-                )
+                or (_cursor_agent_requested() and not payload.get("skip_llm"))
             )
             if use_subprocess:
                 # Subprocess: avoids CrewAI/closed-file on Windows daemon; or uses Cursor CLI when
@@ -413,7 +419,7 @@ class CursorWorkerService:
     def _dispatch_via_subprocess(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Run dispatch in subprocess (Windows daemon fix). Use Cursor CLI when SWARM_USE_CURSOR_AGENT=1."""
         script_dir = Path(__file__).resolve().parent.parent
-        use_cursor_agent = os.getenv("SWARM_USE_CURSOR_AGENT", "").lower() in ("1", "true", "yes")
+        use_cursor_agent = _cursor_agent_requested()
         if use_cursor_agent and not payload.get("skip_llm"):
             run_script = script_dir / "scripts" / "run_cursor_agent.py"
         else:
